@@ -1,0 +1,22 @@
+# payment-gateway-poc/deployments/k8s/fx.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: fx }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: fx } }
+  template:
+    metadata: { labels: { app: fx } }
+    spec:
+      containers:
+        - name: fx
+          image: ghcr.io/example/fx:dev
+          ports: [{ containerPort: 8082 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: fx }
+spec:
+  selector: { app: fx }
+  ports: [{ port: 8082, targetPort: 8082 }]
+  type: ClusterIP

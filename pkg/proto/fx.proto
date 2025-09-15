@@ -1,0 +1,14 @@
+// payment-gateway-poc/pkg/proto/fx.proto
+syntax = "proto3";
+package fx;
+
+message RateRequest { string base = 1; string quote = 2; }
+message RateResponse { string pair = 1; double rate = 2; int64 ts_unix = 3; }
+
+message ConvertRequest { string from = 1; string to = 2; double amount = 3; }
+message ConvertResponse { double amount_converted = 1; double rate_used = 2; }
+
+service FXService {
+  rpc GetRate(RateRequest) returns (RateResponse);
+  rpc Convert(ConvertRequest) returns (ConvertResponse);
+}

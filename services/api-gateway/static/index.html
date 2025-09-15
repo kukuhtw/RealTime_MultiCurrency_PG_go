@@ -1,0 +1,224 @@
+<!-- payment-gateway-poc/services/api-gateway/static/index.html -->
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8"/>
+  <title>Payment Gateway PoC</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    :root{--b:#111827;--t:#1f2937;--bd:#e5e7eb;--mut:#6b7280;--accent:#2563eb;}
+    body{font-family:system-ui,-apple-system,Segoe UI,Arial; margin:24px; color:#111;}
+    .grid{display:grid; gap:16px; grid-template-columns:2fr 1fr;}
+    @media (max-width: 980px){ .grid{grid-template-columns:1fr;} }
+    iframe{width:100%; height:420px; border:1px solid #ddd; border-radius:8px; background:#f3f4f6;}
+    .card{border:1px solid #eee; border-radius:12px; padding:16px; background:#fff;}
+    h1{margin:0 0 12px 0;}
+    h3{margin:0 0 12px 0;}
+    table{width:100%; border-collapse:collapse; font-size:14px}
+    th,td{border-bottom:1px solid #eee; padding:8px 6px; vertical-align:top}
+    th{background:#fafafa; text-align:left}
+    code,pre{background:#f8fafc; border:1px solid #e5e7eb; border-radius:8px; padding:12px; display:block; overflow:auto}
+    .muted{color:#6b7280}
+    .btn{display:inline-block; padding:8px 12px; border:1px solid var(--bd); border-radius:8px; background:#fff; cursor:pointer}
+    .btn.primary{background:var(--accent); color:#fff; border-color:var(--accent)}
+    .row{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+    .row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px}
+    input,select{width:100%; padding:8px 10px; border:1px solid #e5e7eb; border-radius:8px; font:inherit}
+    .kbd{padding:2px 6px; border:1px solid #e5e7eb; border-radius:6px; background:#f8fafc}
+    .pill{display:inline-block; padding:2px 8px; border:1px solid #e5e7eb; border-radius:999px; font-size:12px}
+    .ok{color:#16a34a}
+  </style>
+</head>
+<body>
+  <h1>Real-Time Multi-Currency Payment Gateway (PoC)</h1>
+  <p>Frontend minimal untuk demo. Panel Grafana di-embed di bawah.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Grafana Dashboard</h3>
+      <iframe src="http://localhost:3000/d/paygw-poc?orgId=1&kiosk" title="Grafana Dashboard"></iframe>
+      <div class="muted" style="margin-top:8px">
+        Sumber: <code>http://localhost:3000/d/paygw-poc?orgId=1</code> (anonymous + embedding enabled)
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Quick Links</h3>
+      <ul>
+        <li><a href="/healthz" target="_blank">/healthz</a></li>
+        <li><a href="/metrics" target="_blank">/metrics (prometheus)</a></li>
+        <li><a href="http://localhost:9090" target="_blank">Prometheus (9090)</a></li>
+        <li><a href="http://localhost:3000" target="_blank">Grafana (3000)</a></li>
+      </ul>
+      <div class="muted">Tips: tekan <span class="kbd">Ctrl</span>+<span class="kbd">F5</span> untuk hard refresh jika panel belum tampil.</div>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-top:16px">
+    <div class="card">
+      <h3>API Endpoints</h3>
+      <table>
+        <thead>
+          <tr><th>Service</th><th>Method & Path</th><th>Deskripsi</th><th>Contoh cURL</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>api-gateway</b><br/><span class="muted">:8080</span></td>
+            <td>
+              GET <code>/healthz</code><br/>
+              GET <code>/metrics</code><br/>
+              GET <code>/</code> (serve static)
+            </td>
+            <td>Entry HTTP + static frontend & embed Grafana.</td>
+            <td><code>curl -s http://localhost:8080/healthz</code></td>
+          </tr>
+          <tr>
+            <td><b>payments</b><br/><span class="muted">:8081</span></td>
+            <td>
+              POST <code>/payments</code><br/>
+              GET <code>/healthz</code>, <code>/metrics</code>
+            </td>
+            <td>Buat transaksi pembayaran (mock).</td>
+            <td>
+              <code>curl -s -X POST http://localhost:8081/payments -H "Content-Type: application/json" -d '{"id":"PAY-001","currency":"USD","amount":123.45,"source_account":"ACC_SRC_ABC","destination_account":"ACC_DST_DEF"}'</code>
+            </td>
+          </tr>
+          <tr>
+            <td><b>fx</b><br/><span class="muted">:8082</span></td>
+            <td>
+              GET <code>/rate?base=USD&amp;quote=IDR</code><br/>
+              GET <code>/convert?from=USD&amp;to=IDR&amp;amount=1</code><br/>
+              GET <code>/healthz</code>, <code>/metrics</code>
+            </td>
+            <td>FX rate & konversi (mock).</td>
+            <td><code>curl -s "http://localhost:8082/convert?from=USD&amp;to=IDR&amp;amount=1"</code></td>
+          </tr>
+          <tr>
+            <td><b>wallet</b><br/><span class="muted">:8083</span></td>
+            <td>
+              GET <code>/balance/{accountId}</code><br/>
+              GET <code>/healthz</code>, <code>/metrics</code>
+            </td>
+            <td>Informasi saldo (mock).</td>
+            <td><code>curl -s http://localhost:8083/balance/ACC_001</code></td>
+          </tr>
+          <tr>
+            <td><b>risk</b><br/><span class="muted">:8084</span></td>
+            <td>
+              POST <code>/score</code><br/>
+              GET <code>/healthz</code>, <code>/metrics</code>
+            </td>
+            <td>Skor risiko transaksi (mock).</td>
+            <td><code>curl -s -X POST http://localhost:8084/score -H "Content-Type: application/json" -d '{"account":"ACC_001","amount":999.99,"currency":"USD"}'</code></td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="muted" style="margin-top:8px">Semua service mengekspor metrik Prometheus di <code>/metrics</code>.</p>
+    </div>
+
+    <div class="card">
+      <h3>Cara Testing (Ringkas)</h3>
+      <ol>
+        <li><b>Jalankan stack</b>: <code>make dev</code> <span class="pill ok">UP</span></li>
+        <li><b>Healthcheck</b>: <code>curl -s http://localhost:8081/healthz</code> dst.</li>
+        <li><b>Generate dummy CSV</b>:
+          <code>make dummy-docker N=1000</code> → <code>tests/data/dummy_transactions.csv</code></li>
+        <li><b>Integration test</b>:
+          <code>make test-integration-docker</code> (cek CSV terbaca)</li>
+        <li><b>Load ringan</b> (opsional): kirim banyak <code>POST /payments</code> dan lihat panel di Grafana.</li>
+      </ol>
+      <div class="muted">Saat mengirim dari browser lintas port bisa terblokir CORS, jadi gunakan cURL/CLI.</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Payment Test (Generate cURL)</h3>
+    <div class="row3" style="margin-bottom:8px">
+      <div>
+        <label>ID</label>
+        <input id="p-id" placeholder="PAY-XXXXXX"/>
+      </div>
+      <div>
+        <label>Currency</label>
+        <select id="p-cur">
+          <option>USD</option><option>IDR</option><option>SGD</option><option>EUR</option>
+        </select>
+      </div>
+      <div>
+        <label>Amount</label>
+        <input id="p-amt" type="number" step="0.01" placeholder="123.45"/>
+      </div>
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <div>
+        <label>Source Account</label>
+        <input id="p-src" placeholder="ACC_SRC_ABC"/>
+      </div>
+      <div>
+        <label>Destination Account</label>
+        <input id="p-dst" placeholder="ACC_DST_DEF"/>
+      </div>
+    </div>
+    <div style="display:flex; gap:8px; margin-bottom:8px">
+      <button class="btn" id="btn-random">Randomize</button>
+      <button class="btn primary" id="btn-gen">Generate cURL</button>
+      <button class="btn" id="btn-copy">Copy cURL</button>
+    </div>
+    <pre id="curl-box" style="min-height:60px"># klik “Randomize” lalu “Generate cURL”</pre>
+    <p class="muted" style="margin-top:8px">
+      Jalankan perintah di terminal (Linux/macOS/Wsl) — atau gunakan PowerShell setara.
+      Endpoint: <code>http://localhost:8081/payments</code>
+    </p>
+  </div>
+
+  <script>
+    const el = s => document.querySelector(s);
+    const rand = (min,max)=>Math.floor(Math.random()*(max-min+1))+min;
+    const randID = ()=>'PAY-'+Math.random().toString(36).slice(2,8).toUpperCase();
+    const randAcc = p=>`${p}_${String(rand(0,9999)).padStart(4,'0')}`;
+
+    function generateCurl(){
+      const id  = el('#p-id').value.trim() || randID();
+      const cur = el('#p-cur').value;
+      const amt = parseFloat(el('#p-amt').value|| (10+Math.random()*1000)).toFixed(2);
+      const src = el('#p-src').value.trim() || randAcc('ACC_SRC');
+      const dst = el('#p-dst').value.trim() || randAcc('ACC_DST');
+
+      const payload = JSON.stringify({id:id,currency:cur,amount:Number(amt),
+        source_account:src,destination_account:dst});
+
+      const curl = [
+        'curl -s -X POST http://localhost:8081/payments',
+        '-H "Content-Type: application/json"',
+        `-d '${payload.replace(/'/g,"'\\''")}'`
+      ].join(' \\\n  ');
+
+      el('#curl-box').textContent = curl;
+      if(!el('#p-id').value) el('#p-id').value = id;
+      if(!el('#p-amt').value) el('#p-amt').value = amt;
+      if(!el('#p-src').value) el('#p-src').value = src;
+      if(!el('#p-dst').value) el('#p-dst').value = dst;
+    }
+
+    el('#btn-random').addEventListener('click', ()=>{
+      el('#p-id').value = randID();
+      el('#p-cur').selectedIndex = rand(0,3);
+      el('#p-amt').value = (10+Math.random()*1000).toFixed(2);
+      el('#p-src').value = randAcc('ACC_SRC');
+      el('#p-dst').value = randAcc('ACC_DST');
+    });
+
+    el('#btn-gen').addEventListener('click', generateCurl);
+
+    el('#btn-copy').addEventListener('click', async ()=>{
+      const txt = el('#curl-box').textContent.trim();
+      if(!txt || txt.startsWith('#')) return alert('Generate cURL dulu.');
+      try{ await navigator.clipboard.writeText(txt); alert('cURL copied ✓'); }
+      catch{ alert('Gagal copy. Salin manual dari kotak di atas.'); }
+    });
+
+    // Seed UI pertama
+    el('#btn-random').click();
+  </script>
+</body>
+</html>

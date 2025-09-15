@@ -1,0 +1,19 @@
+# payment-gateway-poc/prometheus/prometheus.yml
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: 'api-gateway'
+    static_configs: [{ targets: ['api-gateway:8080'] }]
+
+  - job_name: 'payments'
+    static_configs: [{ targets: ['payments:8081'] }]
+
+  - job_name: 'fx'
+    static_configs: [{ targets: ['fx:8082'] }]
+
+  - job_name: 'wallet'
+    static_configs: [{ targets: ['wallet:8083'] }]
+
+  - job_name: 'risk'
+    static_configs: [{ targets: ['risk:8084'] }]

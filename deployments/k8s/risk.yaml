@@ -1,0 +1,22 @@
+# payment-gateway-poc/deployments/k8s/risk.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: risk }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: risk } }
+  template:
+    metadata: { labels: { app: risk } }
+    spec:
+      containers:
+        - name: risk
+          image: ghcr.io/example/risk:dev
+          ports: [{ containerPort: 8084 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: risk }
+spec:
+  selector: { app: risk }
+  ports: [{ port: 8084, targetPort: 8084 }]
+  type: ClusterIP

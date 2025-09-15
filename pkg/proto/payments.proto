@@ -1,0 +1,21 @@
+// payment-gateway-poc/pkg/proto/payments.proto
+syntax = "proto3";
+package payments;
+
+message PaymentRequest {
+  string id = 1;
+  string currency = 2;
+  double amount = 3;
+  string source_account = 4;
+  string destination_account = 5;
+}
+
+message PaymentResponse {
+  string id = 1;
+  string status = 2; // PENDING, AUTHORIZED, CAPTURED, FAILED
+  string message = 3;
+}
+
+service PaymentsService {
+  rpc CreatePayment(PaymentRequest) returns (PaymentResponse);
+}

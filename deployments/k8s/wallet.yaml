@@ -1,0 +1,22 @@
+# payment-gateway-poc/deployments/k8s/wallet.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: wallet }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: wallet } }
+  template:
+    metadata: { labels: { app: wallet } }
+    spec:
+      containers:
+        - name: wallet
+          image: ghcr.io/example/wallet:dev
+          ports: [{ containerPort: 8083 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: wallet }
+spec:
+  selector: { app: wallet }
+  ports: [{ port: 8083, targetPort: 8083 }]
+  type: ClusterIP
