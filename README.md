@@ -8,14 +8,7 @@ Monorepo **Proof of Concept** untuk *real-time multi-currency payment gateway* b
 
 > ⚠️ **Catatan:** Ini PoC untuk edukasi/demonstrasi. **Bukan** siap produksi (belum ada persistence DB, auth lengkap, HA, dsb.).
 
-<p align="left">
-  <img alt="Go" src="https://img.shields.io/badge/Go-%3E%3D1.22-00ADD8?logo=go&logoColor=white">
-  <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose%20v2-2496ED?logo=docker&logoColor=white">
-  <img alt="Prometheus" src="https://img.shields.io/badge/Observability-Prometheus%20%2B%20Grafana-E6522C?logo=prometheus&logoColor=white">
-  <img alt="Status" src="https://img.shields.io/badge/Status-PoC-yellow">
-</p>
 
----
 
 ## Daftar Isi
 
