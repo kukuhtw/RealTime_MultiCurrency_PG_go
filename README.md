@@ -145,27 +145,125 @@ Meskipun ini masih **Proof of Concept**, architecture ini memberikan:
 4. **Observability foundation** yang solid
 5. **Documentation** dan examples untuk development selanjutnya
 
-**Kesimpulan:** PoC ini memecahkan masalah kompleksitas payment system multi-currency dengan approach microservices yang observable, testable, dan scalable! 🎉  A[Browser] -->|HTTP| G(API Gateway :8080)
-  G --> P(Payments :8081)
-  G --> F(FX :8082)
-  G --> W(Wallet :8083)
-  G --> R(Risk :8084)
+**Kesimpulan:** PoC ini memecahkan masalah kompleksitas payment system multi-currency dengan approach microservices yang observable, testable, dan scalable! 🎉  
+# Payment Gateway Architecture Overview
 
-  subgraph Obs[Observability]
-    PR(Prometheus :9090)
-    GR(Grafana :3000)
-  end
+## 1. System Architecture Diagram
 
-  P -. /metrics .-> PR
-  F -. /metrics .-> PR
-  W -. /metrics .-> PR
-  R -. /metrics .-> PR
-  G -. /metrics .-> PR
+```mermaid
+flowchart TD
+    A[Browser/Client] -->|HTTP Requests| G(API Gateway<br>:8080)
+    
+    G --> P(Payments Service<br>:8081)
+    G --> F(FX Service<br>:8082)
+    G --> W(Wallet Service<br>:8083)
+    G --> R(Risk Service<br>:8084)
+    
+    subgraph Observability [Observability Stack]
+        PR(Prometheus<br>:9090)
+        GR(Grafana<br>:3000)
+    end
 
-  GR <-- datasource --> PR
-  A --- GR
+    P -.->|Scrape /metrics| PR
+    F -.->|Scrape /metrics| PR
+    W -.->|Scrape /metrics| PR
+    R -.->|Scrape /metrics| PR
+    G -.->|Scrape /metrics| PR
+
+    GR -->|Query Data| PR
+    A -->|Access Dashboard| GR
+    
+    style Observability fill:#f9f,stroke:#333,stroke-width:2px
 ```
 
+## 2. Payment Processing Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant G as API Gateway
+    participant P as Payments Service
+    participant R as Risk Service
+    participant F as FX Service
+    participant W as Wallet Service
+
+    C->>G: POST /payments {payment_data}
+    G->>P: Forward payment request
+    P->>R: Check risk score
+    R-->>P: Return risk assessment
+    P->>F: Convert currency (if needed)
+    F-->>P: Return conversion rate
+    P->>W: Verify balance
+    W-->>P: Return balance status
+    
+    alt Risk is acceptable & balance sufficient
+        P-->>G: Payment processed successfully
+        G-->>C: 200 OK {status: "CAPTURED"}
+    else Risk too high or insufficient balance
+        P-->>G: Payment rejected
+        G-->>C: 400 Bad Request {status: "FAILED"}
+    end
+    
+    Note right of P: Metrics sent to<br>Prometheus throughout
+```
+
+## 3. Service Interaction Details
+
+### API Gateway (:8080)
+- Single entry point for all incoming requests
+- Routes requests to appropriate microservices
+- Serves static content (including embedded Grafana)
+- Health check endpoint: `/healthz`
+- Metrics endpoint: `/metrics`
+
+### Payments Service (:8081)
+- Core payment processing logic
+- Coordinates with other services for risk, FX, and wallet checks
+- Endpoint: `POST /payments`
+- Returns payment status: PENDING, CAPTURED, or FAILED
+
+### FX Service (:8082)
+- Handles currency exchange rates and conversions
+- Endpoints:
+  - `GET /rate?base=USD&quote=IDR`
+  - `GET /convert?from=USD&to=IDR&amount=100`
+
+### Wallet Service (:8083)
+- Manages account balances and transactions
+- Endpoint: `GET /balance/{account_id}`
+- Validates sufficient funds for transactions
+
+### Risk Service (:8084)
+- Assesses transaction risk and fraud potential
+- Endpoint: `POST /score`
+- Returns risk score based on transaction details
+
+## 4. Observability Stack
+
+### Prometheus (:9090)
+- Collects metrics from all services every 15 seconds
+- Stores time-series data for monitoring
+- Provides query language for data analysis
+- Accessible at: http://localhost:9090
+
+### Grafana (:3000)
+- Visualizes metrics from Prometheus
+- Pre-configured with payment gateway dashboard
+- Embedded in API Gateway frontend
+- Anonymous access enabled for demo purposes
+- Accessible at: http://localhost:3000
+
+## 5. Data Flow
+
+1. **Client** makes HTTP request to **API Gateway**
+2. **API Gateway** routes to appropriate microservice
+3. **Microservices** process request and communicate if needed
+4. **Services** expose metrics at `/metrics` endpoints
+5. **Prometheus** scrapes metrics from all services
+6. **Grafana** queries Prometheus for visualization
+7. **Client** can view real-time metrics via Grafana UI
+
+This architecture provides a scalable, observable foundation for payment processing with clear separation of concerns and comprehensive monitoring capabilities.
 ---
 
 ## Struktur Repo
