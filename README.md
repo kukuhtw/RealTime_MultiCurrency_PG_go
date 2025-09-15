@@ -1,6 +1,4 @@
-Siap! Ini versi README yang sudah “dipercantik” — rapi, enak dibaca, dan tetap praktis buat dipakai sehari-hari. Tinggal copas ke `README.md` kamu 👇
 
----
 
 # Real-Time Multi-Currency Payment Gateway (PoC) ⚡💸
 
