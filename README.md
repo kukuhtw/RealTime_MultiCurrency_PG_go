@@ -365,10 +365,4 @@ docker run --rm -v "$(pwd)":/app -w /app \
 
 ---
 
-## Lisensi
 
-Tentukan lisensi sesuai kebutuhan (MIT/Apache-2.0/dll).
-
----
-
-*Selesai. Kalau mau, aku bisa bikinkan badge tambahan (coverage, CI), atau mini-screenshot Grafana untuk ditempel di README.*
