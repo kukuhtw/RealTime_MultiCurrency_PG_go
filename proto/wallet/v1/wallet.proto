@@ -1,0 +1,19 @@
+syntax = "proto3";
+package wallet.v1;
+option go_package = "github.com/kukuhtw/RealTime_MultiCurrency_PG_go/gen/wallet/v1;walletv1";
+import "proto/common/v1/common.proto";
+
+message GetBalanceRequest { common.v1.AccountRef account=1; }
+message GetBalanceResponse { common.v1.Money balance=1; }
+
+message ReserveRequest { common.v1.TxRef tx=1; common.v1.AccountRef account=2; common.v1.Money amount=3; }
+message ReserveResponse { bool ok=1; string reservation_id=2; }
+
+message CaptureRequest { string reservation_id=1; }
+message CaptureResponse { bool ok=1; }
+
+service WalletService {
+  rpc GetBalance(GetBalanceRequest) returns (GetBalanceResponse);
+  rpc Reserve(ReserveRequest) returns (ReserveResponse);
+  rpc Capture(CaptureRequest) returns (CaptureResponse);
+}

@@ -51,6 +51,51 @@ services:
     environment: [HTTP_ADDR=:8084]
     ports: ["8084:8084"]
 
+     risk-grpc:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+      args:
+        SERVICE: .
+    command: ["go", "run", "./cmd/risk-grpc"]
+    ports:
+      - "9094:9094"   # gRPC
+      - "9104:9104"   # metrics
+
+  wallet-grpc:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+      args:
+        SERVICE: .
+    command: ["go", "run", "./cmd/wallet-grpc"]
+    ports:
+      - "9093:9093"
+      - "9103:9103"
+
+  fx-grpc:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+      args:
+        SERVICE: .
+    command: ["go", "run", "./cmd/fx-grpc"]
+    ports:
+      - "9092:9092"
+      - "9102:9102"
+
+  payments-grpc:
+    build:
+      context: ../..
+    depends_on: [risk-grpc, wallet-grpc, fx-grpc]
+    command: ["go", "run", "./cmd/payments-grpc"]
+    ports:
+      - "9091:9091"
+      - "9101:9101"
+    # NOTE: kalau semua jalan di compose, ubah dial address di payments ke:
+    # risk-grpc:9094, wallet-grpc:9093, fx-grpc:9092 (bukan localhost)
+
+
   prometheus:
     image: prom/prometheus
     volumes:

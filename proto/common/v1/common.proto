@@ -1,0 +1,9 @@
+syntax = "proto3";
+package common.v1;
+option go_package = "github.com/kukuhtw/RealTime_MultiCurrency_PG_go/gen/common/v1;commonv1";
+
+enum Currency { CURRENCY_UNSPECIFIED=0; USD=1; IDR=2; EUR=3; SGD=4; JPY=5; }
+message Money { Currency currency=1; double amount=2; }
+message CustomerRef { string customer_id=1; }
+message AccountRef  { string account_id=1; }
+message TxRef       { string tx_id=1; }

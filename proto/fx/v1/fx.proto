@@ -1,0 +1,15 @@
+syntax = "proto3";
+package fx.v1;
+option go_package = "github.com/kukuhtw/RealTime_MultiCurrency_PG_go/gen/fx/v1;fxv1";
+import "proto/common/v1/common.proto";
+
+message GetRateRequest { common.v1.Currency base=1; common.v1.Currency quote=2; }
+message GetRateResponse { double rate=1; }
+
+message ConvertRequest { common.v1.Money from=1; common.v1.Currency to=2; }
+message ConvertResponse { common.v1.Money result=1; }
+
+service FxService {
+  rpc GetRate(GetRateRequest) returns (GetRateResponse);
+  rpc Convert(ConvertRequest) returns (ConvertResponse);
+}

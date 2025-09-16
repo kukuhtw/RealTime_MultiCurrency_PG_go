@@ -7,6 +7,12 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/prometheus/client_golang v1.19.0
 	github.com/rs/cors v1.11.0
+
+	// gRPC core
+	google.golang.org/grpc v1.65.0
+
+	// Prometheus interceptor for gRPC
+	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 )
 
 require (
