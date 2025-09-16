@@ -335,7 +335,7 @@ A: Tidak wajib. Jika tetap di Go 1.22, **pin** plugin `protoc-gen-go` ke `v1.32.
 
 ## 14) Lisensi
 
-Tentukan lisensi yang sesuai (MIT/BSD/Apache-2.0) sesuai kebutuhan proyek.
+Apache-2.0
 
 ---
 
