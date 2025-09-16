@@ -1,272 +1,144 @@
-Baik, saya perbaiki README kamu supaya selaras dengan file struktur baru (`cmd/*-grpc`, `proto/`, `internal/grpcserver/`) dan arsitektur **gRPC** (menggantikan REST antar microservices). Berikut versi yang sudah diperbarui:
+
+
+# 🧩 gRPC Developer Guide — Payment Gateway PoC
+
+Dokumen ini khusus untuk **developer** yang ingin mengembangkan dan menjalankan microservices berbasis **gRPC** pada repo `payment-gateway-poc`.
 
 ---
 
-# Real-Time Multi-Currency Payment Gateway (PoC) ⚡💸
+## 🔧 Build Protobuf & Stub
 
-Monorepo **Proof of Concept** untuk *real-time multi-currency payment gateway* berbasis **microservices** (API Gateway, Payments, FX, Wallet, Risk) dengan **gRPC** sebagai komunikasi internal antar service, **Prometheus + Grafana** untuk observability, serta *tooling* untuk dummy data dan load testing.
+Semua kontrak API ada di folder `proto/`.
 
-> ⚠️ **Catatan**: Ini PoC untuk edukasi/demonstrasi. **Bukan** siap produksi (belum ada persistence DB, auth lengkap, HA, dsb.).
-
----
-
-## 🎯 Masalah yang Dipecahkan
-
-1. **Kompleksitas Payment Multi-Currency**
-
-   * Konversi real-time antar currency
-   * Handling fluktuasi nilai tukar
-   * Validasi saldo lintas akun & mata uang
-
-2. **Risk Management Real-Time**
-
-   * Deteksi fraud instan
-   * Risk scoring berbasis aturan & konteks transaksi
-   * Pencegahan transaksi berisiko sebelum capture
-
-3. **Observability**
-
-   * Metrics latency, throughput, error rate per service
-   * Dashboard real-time
-   * Troubleshooting lebih cepat
-
-4. **Testing & Data Realistik**
-
-   * Generator dummy transaction
-   * End-to-end load testing (REST & gRPC)
-   * Validasi full payment flow tanpa env production
-
----
-
-## ⚡ Solusi yang Diterapkan
-
-### 1. **Arsitektur Microservices berbasis gRPC**
+### Generate Go stubs
 
 ```bash
-proto/                 # Kontrak .proto untuk Risk, Wallet, FX, Payments
-internal/grpcserver/   # Implementasi server gRPC
-cmd/                   # Main entrypoint per service
-  ├─ risk-grpc/
-  ├─ wallet-grpc/
-  ├─ fx-grpc/
-  └─ payments-grpc/
+make proto-gen
 ```
 
-* **Komunikasi internal** antar service: gRPC (bukan lagi REST JSON)
-* **Observability**: setiap service expose `/metrics` via HTTP tambahan untuk Prometheus
+Hasil generate akan muncul di folder sesuai package:
 
-### 2. **gRPC Contracts (contoh)**
-
-```proto
-service PaymentsService {
-  rpc CreatePayment(CreatePaymentRequest) returns (CreatePaymentResponse);
-}
-
-service RiskService {
-  rpc Score(ScoreRequest) returns (ScoreResponse);
-}
 ```
-
-### 3. **Observability Stack**
-
-```mermaid
-flowchart TD
-    A[Client/k6/gRPCurl] -->|gRPC Requests| P(Payments gRPC<br>:9091)
-    P --> R(Risk gRPC<br>:9094)
-    P --> W(Wallet gRPC<br>:9093)
-    P --> F(FX gRPC<br>:9092)
-
-    subgraph Observability
-        PR(Prometheus<br>:9090)
-        GR(Grafana<br>:3000)
-    end
-
-    P -.->|Scrape /metrics :9101| PR
-    R -.->|Scrape /metrics :9104| PR
-    W -.->|Scrape /metrics :9103| PR
-    F -.->|Scrape /metrics :9102| PR
-
-    GR --> PR
-    A --> GR
-```
-
-### 4. **Data Dummy & Load Test**
-
-```bash
-# Generator data dummy
-make dummy-docker N=1000
-
-# Load test REST
-make e2e-compose
-
-# Load test gRPC
-make e2e-grpc
-```
-
-### 5. **Sequence Diagram (gRPC Flow)**
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant P as Payments gRPC (:9091)
-    participant R as Risk gRPC (:9094)
-    participant F as FX gRPC (:9092)
-    participant W as Wallet gRPC (:9093)
-
-    C->>P: CreatePayment (tx, customer, amount)
-    P->>R: Score(tx, customer, amount)
-    R-->>P: RiskScore, Decision
-
-    alt Currency mismatch
-        P->>F: Convert(USD->IDR, amount)
-        F-->>P: Converted amount
-    end
-
-    P->>W: Reserve + Capture(final amount)
-    W-->>P: OK / Insufficient balance
-
-    alt Risk accept & balance OK
-        P-->>C: {status: CAPTURED}
-    else
-        P-->>C: {status: FAILED}
-    end
+proto/payments/v1/payments.pb.go
+proto/payments/v1/payments_grpc.pb.go
+...
 ```
 
 ---
 
-## 🏗️ Arsitektur Sistem (High-Level)
+## 🚀 Jalankan gRPC Services
 
-```
-Client (k6 / grpcurl)
-    │
-    ▼
-Payments gRPC (9091)
- ├─ calls Risk gRPC (9094)
- ├─ calls FX gRPC (9092)
- └─ calls Wallet gRPC (9093)
-
-[Observability]
- ├─ Prometheus (9090) scrape semua /metrics (910x)
- └─ Grafana (3000) visualisasi dashboard
-```
-
----
-
-## 📊 Manfaat
-
-1. **Real-Time Visibility**
-
-   * Metrics per RPC
-   * Live dashboard
-
-2. **Scalability**
-
-   * Service dapat di-scale independen
-   * Load balancing via gRPC
-
-3. **Development Velocity**
-
-   * Kontrak `.proto` → codegen otomatis
-   * Dummy generator + load test gRPC
-
----
-
-## 🚀 Quick Start
-
-Jalankan stack (REST + gRPC + observability):
-
-```bash
-make dev
-```
-
-Jalankan hanya gRPC services:
+### Semua gRPC services via Docker Compose
 
 ```bash
 make dev-grpc
 ```
 
-Akses:
-
-* **Grafana**: [http://localhost:3000](http://localhost:3000)
-* **Prometheus**: [http://localhost:9090](http://localhost:9090)
-* **gRPC services**:
-
-  * Payments → `localhost:9091`
-  * Wallet → `localhost:9093`
-  * FX → `localhost:9092`
-  * Risk → `localhost:9094`
-
----
-
-## 🧪 Testing
-
-### End-to-End (REST + CSV)
+### Hentikan semua gRPC services
 
 ```bash
-make e2e-csv-compose
+make down-grpc
 ```
 
-### gRPC Load Test
+### Jalankan satu per satu (opsional)
 
 ```bash
-make e2e-grpc \
-  TX_ID=TXTEST CUSTOMER_ID=CUST-1 AMOUNT=250 VUS=10 DURATION=1m
+# Jalankan payments-grpc
+go run ./cmd/payments-grpc
+
+# Jalankan wallet-grpc
+go run ./cmd/wallet-grpc
 ```
 
 ---
 
-## 📋 Ports & Endpoints
+## 📡 Ports & Metrics
 
-| Service       | gRPC Port | Metrics Port | gRPC Method Utama               |
-| ------------- | --------- | ------------ | ------------------------------- |
-| payments-grpc | 9091      | 9101         | `PaymentsService/CreatePayment` |
-| wallet-grpc   | 9093      | 9103         | `WalletService/Reserve`         |
-| fx-grpc       | 9092      | 9102         | `FxService/Convert`             |
-| risk-grpc     | 9094      | 9104         | `RiskService/Score`             |
-| api-gateway   | 8080      | 8080/metrics | (opsional: expose REST/gRPC-GW) |
+| Service       | gRPC Port | Metrics Port |
+| ------------- | --------- | ------------ |
+| payments-grpc | 9091      | 9101         |
+| fx-grpc       | 9092      | 9102         |
+| wallet-grpc   | 9093      | 9103         |
+| risk-grpc     | 9094      | 9104         |
 
 ---
 
-## 🏗️ Struktur Repo
+## 🧪 Testing gRPC Services
+
+### Manual via [grpcurl](https://github.com/fullstorydev/grpcurl)
+
+#### Create Payment
+
+```bash
+grpcurl -plaintext -d '{
+  "id": "PAY-123",
+  "currency": "USD",
+  "amount": 99.95,
+  "source_account": "ACC_SRC_A",
+  "destination_account": "ACC_DST_B"
+}' localhost:9091 payments.v1.PaymentsService/CreatePayment
+```
+
+#### Score Risk
+
+```bash
+grpcurl -plaintext -d '{
+  "tx_id": "PAY-123",
+  "customer_id": "CUST-99",
+  "amount": 250
+}' localhost:9094 risk.v1.RiskService/Score
+```
+
+---
+
+### Load Test dengan k6 (xk6-grpc)
+
+#### Basic scenario
+
+```bash
+make e2e-grpc
+```
+
+#### Custom env vars
+
+```bash
+TX_ID=PAY-001 CUSTOMER_ID=CUST-1 AMOUNT=150 \
+  make e2e-grpc
+```
+
+Script ada di:
+
+```
+tests/e2e/payment_grpc_test.js
+tests/e2e/payment_grpc_param_test.js
+```
+
+---
+
+## 🏗️ Struktur Terkait gRPC
 
 ```
 payment-gateway-poc/
-├─ cmd/                   # Entrypoint service gRPC
-│   ├─ payments-grpc/
-│   ├─ wallet-grpc/
-│   ├─ fx-grpc/
-│   └─ risk-grpc/
-├─ proto/                 # Protobuf definitions
-│   ├─ common/v1/
-│   ├─ payments/v1/
-│   ├─ wallet/v1/
-│   ├─ fx/v1/
-│   └─ risk/v1/
-├─ internal/
-│   └─ grpcserver/        # Implementasi server gRPC
-├─ deployments/
-│   └─ compose/           # Docker compose files
-├─ prometheus/            # Config Prometheus
-├─ grafana/               # Dashboard provisioning
-├─ tests/
-│   └─ e2e/               # k6 & xk6-grpc scripts
-└─ tools/
-    └─ cmd/dummygen/      # Dummy data generator
+├─ cmd/
+│   ├─ payments-grpc/       # Entrypoint Payments gRPC server
+│   ├─ wallet-grpc/         # Entrypoint Wallet gRPC server
+│   ├─ fx-grpc/             # Entrypoint FX gRPC server
+│   └─ risk-grpc/           # Entrypoint Risk gRPC server
+├─ proto/
+│   ├─ common/v1/           # Shared messages
+│   ├─ payments/v1/         # Payments proto
+│   ├─ wallet/v1/           # Wallet proto
+│   ├─ fx/v1/               # FX proto
+│   └─ risk/v1/             # Risk proto
+├─ internal/grpcserver/     # Server implementation
+└─ tests/e2e/               # k6/xk6-grpc tests
 ```
 
 ---
 
-## 🚀 PoC sebagai Foundation
+## ⚠️ Catatan
 
-Arsitektur ini memberikan:
+* gRPC dipakai untuk **komunikasi antar service internal**
+* REST endpoint (`/healthz`, `/metrics`) tetap ada untuk observability dan orchestration
+* Protobuf contract adalah **source of truth** → setiap perubahan harus regenerate stub (`make proto-gen`)
 
-1. **Blueprint** untuk production-ready payment gateway
-2. **Kontrak gRPC** yang jelas & bisa di-extend (database, auth, dsb.)
-3. **Testing framework** end-to-end REST + gRPC
-4. **Observability** metrics per RPC
-
-**Kesimpulan:** PoC ini membuktikan konsep payment gateway multi-currency real-time dengan komunikasi gRPC yang **observable, scalable, dan testable** 🎉
-
----
-
-Mau saya bikinkan juga README tambahan **`README_GRPC.md`** khusus developer (isi instruksi build protos + jalankan server gRPC secara terpisah) biar repo kamu lebih mudah dipahami kontributor?
