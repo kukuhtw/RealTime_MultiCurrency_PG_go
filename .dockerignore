@@ -1,18 +1,16 @@
-# artefak & cache umum
-bin/
-dist/
-.idea/
-.vscode/
-.git/
-.gitignore
-**/*.swp
-**/*.DS_Store
+# ==== JANGAN IGNORE FILE PROTO HASIL GENERATE ====
+#!proto/gen/**
+#!**/*.pb.go
+#!**/*_grpc.pb.go
 
-# pastikan source tidak terignore
-!services/
-!cmd/
-!internal/
-!proto/
-!pkg/
-!go.mod
-!go.sum
+# ==== Umum ====
+.git
+.gitignore
+*.log
+/tmp
+/vendor
+/node_modules
+dist
+build
+bin
+.DS_Store

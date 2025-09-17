@@ -1,21 +1,30 @@
 # syntax=docker/dockerfile:1.6
-# filename:Dockerfile.payments-rs
-
-# syntax=docker/dockerfile:1.6
-FROM rust:1.80 as build
+FROM rust:1.84-bullseye AS builder
 WORKDIR /app
+
 ENV CARGO_HOME=/usr/local/cargo
+ENV PATH="/usr/local/cargo/bin:${PATH}"
+
+# SQLX offline: copy cache .sqlx (harus sudah dibuat di host: `cargo sqlx prepare`)
+#    Kalau belum ada, hapus baris COPY ini dan build dengan offline=false.
+ENV SQLX_OFFLINE=false
+# COPY services/db-rs/.sqlx ./services/db-rs/.sqlx
+
+# Install protoc
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
 COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target \
-    bash -lc "cd services/payments-rs && cargo build --release"
+
+RUN command -v cargo && cargo --version
+RUN cd services/db-rs && cargo build --release
 
 FROM debian:stable-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates tzdata libssl3 \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /app/services/payments-rs/target/release/payments-rs /app/payments-rs
+COPY --from=builder /app/services/payments-rs/target/release/payments-rs /app/payments-rs
 ENV RUST_LOG=info
 EXPOSE 9096 9106
 ENTRYPOINT ["/app/payments-rs"]

@@ -1,18 +1,26 @@
+# services/payments-rs/Cargo.toml
 [package]
 name = "payments-rs"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [dependencies]
+anyhow = "1"
 tonic = { version = "0.12", features = ["transport"] }
 prost = "0.13"
-tokio = { version = "1.37", features = ["macros","rt-multi-thread"] }
+prost-types = "0.13"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt","env-filter"] }
-moka = { version = "0.12", features = ["future"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
+hyper = { version = "0.14", features = ["server", "http1"] }
 prometheus = "0.13"
-hyper = { version = "0.14", features = ["server","http1"] }
+moka = { version = "0.12", features = ["future"] }
+axum = "0.7"
+
 
 [build-dependencies]
 tonic-build = "0.12"
+prost-build = "0.13"
+

@@ -19,7 +19,7 @@ import (
 )
 
 type APIServer struct {
-	paymentsClient paymentsv1.PaymentServiceClient
+	paymentsClient paymentsv1.PaymentsServiceClient
 	router         *mux.Router
 }
 

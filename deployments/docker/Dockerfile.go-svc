@@ -1,30 +1,71 @@
+# deployments/docker/Dockerfile.go-svc
 # syntax=docker/dockerfile:1.6
-# filename:Dockerfile.go-svc
+# deployments/docker/Dockerfile.go-svc
+# syntax=docker/dockerfile:1.6
 
-FROM golang:1.22-alpine AS build
+ARG GO_VERSION=1.23.1
+
+########################
+# 1) Build Stage
+########################
+FROM golang:${GO_VERSION}-alpine AS builder
 WORKDIR /app
 
-# deps (cache-friendly)
+# Tools & protoc
+RUN apk add --no-cache git ca-certificates bash build-base protobuf
+
+# Plugin protoc (protoc-gen-go & protoc-gen-go-grpc)
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.1 && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+
+# Cache mod
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
-# source
+# Copy source
 COPY . .
 
-# sinkron deps
-RUN --mount=type=cache,target=/go/pkg/mod go mod tidy
+# (Opsional) Generate ulang protobuf bila diperlukan
+RUN --mount=type=cache,target=/go/pkg/mod sh -c '\
+  set -e; \
+  if [ -f proto/gen/common/v1/common.proto ]; then \
+    protoc -I proto/gen \
+      --go_out=proto/gen --go_opt=paths=source_relative \
+      --go-grpc_out=proto/gen --go-grpc_opt=paths=source_relative \
+      common/v1/common.proto \
+      risk/v1/risk.proto \
+      wallet/v1/wallet.proto \
+      fx/v1/fx.proto \
+      fx/v1/fx_admin.proto \
+      payments/v1/payments.proto; \
+  fi'
 
-# build biner untuk service yang ditentukan
-ARG SERVICE=services/wallet
+
+# Add these lines before the build command for debugging
+RUN echo "Building service: ${SERVICE}"
+RUN ls -la ${SERVICE} || echo "Service directory not found"
+RUN which go || echo "go not found"
+RUN /usr/local/go/bin/go version || echo "go version failed"
+
+
+
+# Build binary untuk service yang dipilih
+ARG SERVICE=services/api-gateway
 ENV CGO_ENABLED=0
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    sh -lc "cd ${SERVICE} && go build -trimpath -ldflags='-s -w' -o /out/app"
+    mkdir -p /out && cd ${SERVICE} && /usr/local/go/bin/go build -trimpath -ldflags='-s -w' -o /out/app
 
-# runtime
+########################
+# 2) Runtime Stage
+########################
 FROM alpine:3.20
 WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata
-COPY --from=build /out/app /app/app
+
+COPY --from=builder /out/app /app/app
+
+# Port default (ubah di compose kalau perlu)
+EXPOSE 8080
+
 ENTRYPOINT ["/app/app"]
-# NOTE: tidak EXPOSE port—biarkan docker compose yang map portnya

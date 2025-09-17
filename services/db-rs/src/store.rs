@@ -6,10 +6,11 @@ use uuid::Uuid;
 
 #[derive(Debug)]
 pub enum ReserveResult {
-    Ok { reservation_id: Uuid },
-    Insufficient,
-    Duplicate { reservation_id: Uuid },
+    Ok { reservation_id: Uuid, current_balance: i64 },
+    Insufficient { current_balance: i64 },
+    Duplicate { reservation_id: Uuid, current_balance: i64 },
 }
+
 
 #[derive(Debug)]
 pub enum CommitResult {
@@ -29,6 +30,8 @@ pub enum RollbackResult {
 /// ReserveFunds:
 /// - Idempotent dengan idempotency_key (cek di reservations)
 /// - Lock saldo sender (FOR UPDATE), cek cukup, kurangi, insert reservation PENDING
+// services/db-rs/src/store.rs
+
 pub async fn reserve_funds(
     tx: &mut Transaction<'_, Postgres>,
     idempotency_key: &str,
@@ -45,11 +48,20 @@ pub async fn reserve_funds(
            FOR UPDATE"#,
         idempotency_key
     )
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?
     {
-        let rid = row.reservation_id;
-        return Ok(ReserveResult::Duplicate { reservation_id: rid });
+        // ambil saldo terkini sender untuk response
+        let s = sqlx::query!(
+            r#"SELECT balance_idr FROM wallet_accounts WHERE account_id = $1 FOR UPDATE"#,
+            sender_id
+        )
+        .fetch_one(&mut **tx)
+        .await?;
+        return Ok(ReserveResult::Duplicate {
+            reservation_id: row.reservation_id,
+            current_balance: s.balance_idr,
+        });
     }
 
     // 1) Lock sender balance
@@ -60,23 +72,28 @@ pub async fn reserve_funds(
            FOR UPDATE"#,
         sender_id
     )
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?
     .ok_or_else(|| anyhow!("sender_not_found"))?;
 
     if sender.balance_idr < amount_idr {
-        return Ok(ReserveResult::Insufficient);
+        return Ok(ReserveResult::Insufficient {
+            current_balance: sender.balance_idr,
+        });
     }
+
+    // hitung saldo baru lebih dulu agar bisa direturn
+    let new_balance = sender.balance_idr - amount_idr;
 
     // 2) Deduct (hold)
     sqlx::query!(
         r#"UPDATE wallet_accounts
-           SET balance_idr = balance_idr - $1, updated_at = now()
+           SET balance_idr = $1, updated_at = now()
            WHERE account_id = $2"#,
-        amount_idr,
+        new_balance,
         sender_id
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // 3) Insert reservation
@@ -94,11 +111,12 @@ pub async fn reserve_funds(
         amount_idr,
         currency_input
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     Ok(ReserveResult::Ok {
         reservation_id: rid,
+        current_balance: new_balance,
     })
 }
 
@@ -118,7 +136,7 @@ pub async fn commit_reservation(
            FOR UPDATE"#,
         idempotency_key
     )
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?
     {
         return Ok(CommitResult::ReplayOk);
@@ -132,7 +150,7 @@ pub async fn commit_reservation(
            FOR UPDATE"#,
         reservation_id
     )
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?;
 
     let res = match res {
@@ -152,7 +170,7 @@ pub async fn commit_reservation(
         res.amount_idr,
         res.receiver_id
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // update reservation -> COMMITTED
@@ -162,7 +180,7 @@ pub async fn commit_reservation(
            WHERE reservation_id = $1"#,
         reservation_id
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // insert payments SUCCESS
@@ -180,7 +198,7 @@ pub async fn commit_reservation(
         res.currency_input,
         res.amount_idr
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     Ok(CommitResult::Ok)
@@ -201,7 +219,7 @@ pub async fn rollback_reservation(
            FOR UPDATE"#,
         reservation_id
     )
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?;
 
     let res = match res {
@@ -221,7 +239,7 @@ pub async fn rollback_reservation(
         res.amount_idr,
         res.sender_id
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // update reservation -> ROLLEDBACK
@@ -231,7 +249,7 @@ pub async fn rollback_reservation(
            WHERE reservation_id = $1"#,
         reservation_id
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // insert payments FAILED
@@ -250,7 +268,7 @@ pub async fn rollback_reservation(
         res.currency_input,
         res.amount_idr
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // (opsional) kamu bisa tambah tabel payment_failures untuk simpan "reason"

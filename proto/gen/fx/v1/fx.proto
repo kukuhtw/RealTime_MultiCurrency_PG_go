@@ -1,18 +1,18 @@
 // proto/gen/fx/v1/fx.proto
+// proto/gen/fx/v1/fx.proto
 syntax = "proto3";
-
 package fx.v1;
-
 option go_package = "github.com/example/payment-gateway-poc/proto/gen/fx/v1;fxv1";
 
 service FxService {
   rpc UpdateRates(UpdateRatesRequest) returns (UpdateRatesResponse);
+  rpc Convert(ConvertRequest) returns (ConvertResponse); // dipakai API Gateway
 }
 
 message Rate {
-  string base_currency = 1;
+  string base_currency  = 1;
   string quote_currency = 2;
-  double rate = 3;
+  double rate           = 3;
 }
 
 message UpdateRatesRequest {
@@ -22,4 +22,15 @@ message UpdateRatesRequest {
 message UpdateRatesResponse {
   bool success = 1;
   string message = 2;
+}
+
+// Sederhana sesuai handler: string + double
+message ConvertRequest {
+  string from_currency = 1; // "USD"
+  string to_currency   = 2; // "IDR"
+  double amount        = 3; // 123.45
+}
+
+message ConvertResponse {
+  double amount = 1; // hasil konversi
 }

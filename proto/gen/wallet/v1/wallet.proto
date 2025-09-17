@@ -1,54 +1,54 @@
-// proto/gen/payments/v1/wallet.proto
 
+// proto/gen/wallet/v1/wallet.proto
 syntax = "proto3";
 
 package wallet.v1;
 option go_package = "github.com/example/payment-gateway-poc/proto/gen/wallet/v1;walletv1";
 
-import "proto/gen/common/v1/common.proto";
+import "common/v1/common.proto";
 
-// ===== RPC untuk kebutuhan UI/demo =====
+// ===== UI helper =====
 message GetRandomAccountsRequest {
-  uint32 count = 1; // default 2 (sender, receiver) – jika 0, server treat as 2
+  uint32 count = 1; // default 2
 }
 message GetRandomAccountsResponse {
   repeated string account_ids = 1;
 }
-
-// ===== RPC operasional wallet =====
-message GetBalanceRequest {
+// ===== Account lookup utk handler =====
+message GetAccountRequest {
   string account_id = 1;
 }
+message GetAccountResponse {
+  string             account_id = 1;
+  int64              balance_idr = 2;     // sesuai handler: acc.BalanceIdr
+  common.v1.Currency currency    = 3;     // biasanya IDR
+}
+
+// ===== Operasional wallet =====
+message GetBalanceRequest { string account_id = 1; }
 message GetBalanceResponse {
-  int64 balance_minor = 1;                // saldo dalam minor units (IDR = rupiah)
-  common.v1.Currency currency = 2;        // biasanya CURRENCY_IDR
+  int64              balance_minor = 1;
+  common.v1.Currency currency      = 2;
 }
 
 message ReserveRequest {
-  string payment_id   = 1;                // id pembayaran dari payment service
-  string account_id   = 2;                // sumber dana
-  int64  amount_minor = 3;                // rupiah (minor units)
-  common.v1.Currency currency = 4;        // biasanya CURRENCY_IDR
+  string             payment_id   = 1;
+  string             account_id   = 2;
+  int64              amount_minor = 3;
+  common.v1.Currency currency     = 4;
 }
 message ReserveResponse {
   bool   ok             = 1;
   string reservation_id = 2;
-  string reason         = 3;              // jika ok=false
+  string reason         = 3;
 }
 
-message CaptureRequest {
-  string reservation_id = 1;
-}
-message CaptureResponse {
-  bool   ok     = 1;
-  string reason = 2;                      // jika ok=false
-}
+message CaptureRequest  { string reservation_id = 1; }
+message CaptureResponse { bool ok = 1; string reason = 2; }
 
 service WalletService {
-  // UI helper
   rpc GetRandomAccounts(GetRandomAccountsRequest) returns (GetRandomAccountsResponse);
-
-  // Operasional
+  rpc GetAccount (GetAccountRequest) returns (GetAccountResponse);     // dipakai API Gateway
   rpc GetBalance (GetBalanceRequest) returns (GetBalanceResponse);
   rpc Reserve    (ReserveRequest)    returns (ReserveResponse);
   rpc Capture    (CaptureRequest)    returns (CaptureResponse);

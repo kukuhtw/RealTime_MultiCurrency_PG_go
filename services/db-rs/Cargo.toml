@@ -5,14 +5,22 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
-tokio = { version = "1.39", features = ["macros", "rt-multi-thread", "time"] }
+
+
 tonic = { version = "0.12", features = ["transport"] }
 prost = "0.13"
 prost-types = "0.13"
 uuid = { version = "1.8", features = ["v4", "serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sqlx = { version = "0.7", default-features = false, features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
+sqlx = { version = "0.7", default-features = false, features = [
+  "runtime-tokio",
+  "macros",
+  "postgres",
+  "uuid",
+  "time"
+] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 prometheus = "0.13"
@@ -20,3 +28,4 @@ hyper = { version = "0.14", features = ["full"] }
 
 [build-dependencies]
 tonic-build = "0.12"
+

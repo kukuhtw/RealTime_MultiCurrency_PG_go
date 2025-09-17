@@ -20,12 +20,12 @@ message CheckBalanceResponse {
 }
 
 enum TxStatus {
-  TX_STATUS_UNSPECIFIED   = 0;
-  TX_STATUS_OK            = 1;
-  TX_STATUS_INSUFFICIENT  = 2;
-  TX_STATUS_DUPLICATE     = 3;
-  TX_STATUS_NOT_FOUND     = 4;
-  TX_STATUS_ERROR         = 5;
+  TX_STATUS_UNSPECIFIED = 0;
+  OK = 1;
+  DUPLICATE = 2;
+  INSUFFICIENT = 3;
+  NOT_FOUND = 4;
+  BAD_STATUS = 5;
 }
 
 message ReserveFundsRequest {
@@ -33,16 +33,16 @@ message ReserveFundsRequest {
   string sender_id       = 2;
   string receiver_id     = 3;
   int64  amount_idr      = 4;
-  string currency_input  = 5; // "IDR","USD","SGD" (as submitted)
-  string created_at_iso  = 6; // ISO8601, optional
+  string currency_input  = 5;
 }
 
 message ReserveFundsResponse {
-  TxStatus status         = 1;
-  string   reservation_id = 2; // kalau OK
-  int64    current_balance= 3; // saldo sender setelah reserve (atau sebelum jika fail)
-  string   message        = 4; // alasan jika fail
+  int32  status           = 1; // cast dari TxStatus
+  string reservation_id   = 2;
+  int64  current_balance  = 3; // <-- tambahkan
+  string message          = 4; // <-- tambahkan
 }
+
 
 message CommitReservationRequest {
   string reservation_id   = 1;

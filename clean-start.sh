@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ./clean-start.sh
 PROJECT=compose
 COMPOSE_FILE="deployments/compose/docker-compose.dev.v3.yaml"
 

@@ -1,63 +1,46 @@
 # syntax=docker/dockerfile:1.6
 
-########## BUILD STAGE ##########
-FROM rustlang/rust:nightly AS build
+########## Builder ##########
+FROM rust:1.79-bullseye AS builder
 WORKDIR /app
-SHELL ["/bin/bash", "-lc"]
 
-# Pastikan cargo di PATH
-ENV RUSTUP_HOME=/usr/local/rustup \
-    CARGO_HOME=/usr/local/cargo \
-    PATH=/usr/local/cargo/bin:/usr/local/rustup/bin:/root/.cargo/bin:$PATH
-
-# Tool umum utk crates (openssl, certs)
-RUN apt-get update \
- && apt-get install -y --no-install-recommends pkg-config libssl-dev ca-certificates protobuf-compiler \
- && update-ca-certificates \
+# tools untuk tonic_build dan fetch git deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    protobuf-compiler pkg-config libssl-dev ca-certificates git \
  && rm -rf /var/lib/apt/lists/*
 
-# Arg: path crate & optional bin name
-ARG SERVICE
-ARG BIN=""
+# hindari race pada cache cargo
+ENV CARGO_HOME=/cargo
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
-# Copy seluruh sumber
+# SALIN SELURUH REPO (paling aman)
 COPY . .
 
-# Build crate spesifik
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target \
+# Build service (tentukan via build-arg)
+ARG SERVICE=services/payments-rs
+ARG BIN=""  # kalau kosong, ambil dari package.name
+
+# cache terpisah & locked biar gak saling sikut saat paralel
+RUN --mount=type=cache,target=/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/cargo/git,sharing=locked \
+    --mount=type=cache,target=/app/target,sharing=locked \
     bash -eo pipefail -c '\
-      export PATH="/usr/local/cargo/bin:/root/.cargo/bin:/usr/local/rustup/bin:$PATH"; \
-      echo ">> Using PATH: $PATH"; which cargo || true; cargo --version || true; \
-      test -n "$SERVICE"; \
+      set -euxo pipefail; \
       MANIFEST="$SERVICE/Cargo.toml"; \
-      if [ -z "$BIN" ]; then \
-        PKG=$(awk -F= "/^\\s*name\\s*=\\s*/{gsub(/[\x22\x27 ]/,\"\",\$2); print \$2; exit}" "$MANIFEST" || true); \
-      else \
-        PKG="$BIN"; \
+      PKG="$BIN"; \
+      if [ -z "$PKG" ]; then \
+        PKG=$(awk -F= "/^\\s*name\\s*=\\s*/{gsub(/[\x22\\x27 ]/,\"\",\$2); print \$2; exit}" "$MANIFEST"); \
       fi; \
-      echo ">> Building SERVICE=$SERVICE (bin=$PKG)"; \
       cargo build --release --manifest-path "$MANIFEST"; \
-      OUT="target/release/$PKG"; \
-      if [ -z "$PKG" ] || [ ! -f "$OUT" ]; then \
-        OUT=$(ls -1t target/release | head -n1); \
-        OUT="target/release/$OUT"; \
-      fi; \
-      echo ">> Built: $OUT"; \
-      install -D -m 0755 "$OUT" /out/app \
+      install -D -m 0755 "target/release/$PKG" /out/app \
     '
 
-########## RUNTIME STAGE ##########
+########## Runtime ##########
 FROM debian:bookworm-slim
 WORKDIR /app
-SHELL ["/bin/bash", "-lc"]
-
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates libssl3 tzdata \
- && update-ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates tzdata \
  && rm -rf /var/lib/apt/lists/*
-
-COPY --from=build /out/app /app/app
-ENV TZ=Asia/Jakarta
-EXPOSE 8080 9090 9100 9101 9102 9103 9104
+COPY --from=builder /out/app /app/app
+EXPOSE 9096 9106
 ENTRYPOINT ["/app/app"]

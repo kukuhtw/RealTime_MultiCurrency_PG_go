@@ -1,11 +1,14 @@
 // proto/gen/fx/v1/fx_admin.proto
+// proto/gen/fx/v1/fx_admin.proto
 syntax = "proto3";
 
 package fx.v1;
 option go_package = "github.com/example/payment-gateway-poc/proto/gen/fx/v1;fxv1";
 
+// PENTING: import rate dari fx.proto (jangan didefinisikan ulang)
+import "fx/v1/fx.proto";
+
 service FxAdminService {
-  // Memicu API Gateway untuk generate kurs random & push ke FxService.UpdateRates
   rpc RefreshRandomRates(RefreshRandomRatesRequest) returns (RefreshRandomRatesResponse);
 }
 
@@ -14,11 +17,5 @@ message RefreshRandomRatesRequest {}
 message RefreshRandomRatesResponse {
   bool success = 1;
   string message = 2;
-  repeated Rate pushed = 3; // echo kembali rates yang dikirim ke FX
-}
-
-message Rate {
-  string base_currency = 1;
-  string quote_currency = 2;
-  double rate = 3;
+  repeated Rate pushed = 3; // reuse Rate dari fx.proto
 }

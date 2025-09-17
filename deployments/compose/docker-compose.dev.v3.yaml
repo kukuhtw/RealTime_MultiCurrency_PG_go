@@ -35,6 +35,7 @@ services:
       timeout: 3s
       retries: 20
     networks: { payment-network: {} }
+    restart: unless-stopped
 
   # ======================
   # Infra: Kafka (single-node KRaft)
@@ -58,6 +59,7 @@ services:
       timeout: 3s
       retries: 30
     networks: { payment-network: {} }
+    restart: unless-stopped
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -71,6 +73,7 @@ services:
       kafka:
         condition: service_healthy
     networks: { payment-network: {} }
+    restart: unless-stopped
 
   kafka-exporter:
     image: danielqsj/kafka-exporter
@@ -81,17 +84,18 @@ services:
       kafka:
         condition: service_healthy
     networks: { payment-network: {} }
+    restart: unless-stopped
 
-    # ======================
+  # ======================
   # Rust gRPC services
   # ======================
   payments-rs:
     build:
       context: ../../
-      dockerfile: deployments/docker/Dockerfile.rust
+      dockerfile: deployments/docker/Dockerfile.payments-rs 
       args:
         SERVICE: services/payments-rs
-        # BIN: payments-rs   # isi jika nama bin beda dari package.name
+        # BIN: payments-rs
     image: compose-payments-rs
     environment:
       GRPC_ADDR: ":9096"
@@ -105,11 +109,12 @@ services:
       - "19096:9096"
       - "19106:9106"
     networks: { payment-network: {} }
+    restart: unless-stopped
 
   db-rs:
     build:
       context: ../../
-      dockerfile: deployments/docker/Dockerfile.rust
+      dockerfile: deployments/docker/Dockerfile.db-rs 
       args:
         SERVICE: services/db-rs
         # BIN: db-rs
@@ -125,15 +130,16 @@ services:
       - "19095:9095"
       - "19105:9105"
     networks: { payment-network: {} }
-
+    restart: unless-stopped
 
   # ======================
   # Go services
   # ======================
   api-gateway:
     build:
-      context: ../../
-      dockerfile: deployments/docker/Dockerfile.api-gateway
+      <<: *go_svc
+      args:
+        SERVICE: services/api-gateway
     image: compose-api-gateway
     environment:
       FX_ADDR: fx-grpc:9102
@@ -157,6 +163,7 @@ services:
       fx-grpc:
         condition: service_started
     networks: { payment-network: {} }
+    restart: unless-stopped
 
   wallet-grpc:
     build:
@@ -175,6 +182,7 @@ services:
       - "19093:9093"
       - "19103:9103"
     networks: { payment-network: {} }
+    restart: unless-stopped
 
   fx-grpc:
     build:
@@ -187,6 +195,7 @@ services:
     ports:
       - "19102:9102"
     networks: { payment-network: {} }
+    restart: unless-stopped
 
   risk-grpc:
     build:
@@ -201,6 +210,7 @@ services:
       - "19094:9094"
       - "19104:9104"
     networks: { payment-network: {} }
+    restart: unless-stopped
 
   # ======================
   # Worker (Kafka -> payments-rs)
@@ -222,6 +232,7 @@ services:
       payments-rs:
         condition: service_started
     networks: { payment-network: {} }
+    restart: unless-stopped
 
   # ======================
   # Data seeding (on-demand)
@@ -237,9 +248,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # gunakan 'sh -lc', bukan 'bash -lc' (python:*-slim tidak punya bash)
     command: >
-      bash -lc "pip install --no-cache-dir psycopg[binary] &&
-                python generate_dummy_data.py"
+      sh -lc "pip install --no-cache-dir 'psycopg[binary]' &&
+              python generate_dummy_data.py"
 
   # ======================
   # Observability
@@ -249,13 +261,15 @@ services:
     ports:
       - "19097:9090"
     volumes:
-      - ../../prometheus:/etc/prometheus:ro
+      # Map langsung ke file prometheus.yml
+      - ../../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prom_data:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --web.enable-lifecycle
     networks: { payment-network: {} }
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:latest
@@ -274,3 +288,4 @@ services:
       prometheus:
         condition: service_started
     networks: { payment-network: {} }
+    restart: unless-stopped

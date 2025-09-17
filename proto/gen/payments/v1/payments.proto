@@ -1,49 +1,43 @@
 // proto/gen/payments/v1/payments.proto
+
+// proto/gen/payments/v1/payments.proto
 syntax = "proto3";
 
 package payments.v1;
-
-// Pastikan opsi go_package sesuai module path kamu.
 option go_package = "github.com/example/payment-gateway-poc/proto/gen/payments/v1;paymentsv1";
 
-// ⚠️ Penting: saat generate gunakan include path -I proto/gen
-// sehingga import cukup "common/v1/common.proto" (BUKAN "proto/gen/common/v1/common.proto").
 import "common/v1/common.proto";
 
-// ====== CreatePayment ======
-// Request untuk membuat pembayaran. Menggunakan minor units agar presisi (tanpa floating point).
+// ====== CreatePayment (opsional: tetap ada bila kamu pakai di tempat lain) ======
 message CreatePaymentRequest {
-  // Jumlah dalam minor units (cents/sen). Contoh:
-  // - USD 12.34  -> amount_minor = 1234
-  // - IDR 25.000 -> amount_minor = 25000
-  int64  amount_minor = 1;
-
-  // Mata uang mengikuti enum di common.v1.Currency (mis. USD/IDR/SGD).
-  common.v1.Currency currency = 2;
-
-  // Rekening asal (account ID) yang mendebit dana.
-  string source_account = 3;
-
-  // Rekening tujuan (account ID) yang menerima dana.
-  string destination_account = 4;
-
-  // Opsional: ID transaksi dari sisi klien untuk idempotency/referensi.
-  string client_tx_id = 5;
+  int64               amount_minor        = 1;
+  common.v1.Currency  currency            = 2;
+  string              source_account      = 3;
+  string              destination_account = 4;
+  string              client_tx_id        = 5;
 }
-
-// Response pembuatan pembayaran.
 message CreatePaymentResponse {
-  // ID pembayaran yang dihasilkan oleh sistem (server-side).
   string payment_id = 1;
-
-  // Status ringkas, mis. "PENDING", "SUCCESS", "FAILED".
-  // (Bisa diganti enum jika kamu ingin lebih ketat.)
-  string status = 2;
+  string status     = 2;
 }
 
-// Service Payments.
+// ====== LogAndSettle (dipakai worker) ======
+message LogAndSettleRequest {
+  string idempotency_key = 1;
+  string sender_id       = 2;
+  string receiver_id     = 3;
+  int64  amount_idr      = 4;
+  string currency        = 5; // as-submitted
+  string tx_date         = 6; // ISO-8601
+}
+
+message LogAndSettleResponse {
+  string status         = 1; // "SUCCESS", "FAILED", ...
+  string message        = 2;
+  string reservation_id = 3;
+}
+
 service PaymentsService {
   rpc CreatePayment (CreatePaymentRequest) returns (CreatePaymentResponse);
-  rpc LogAndSettle (LogAndSettleRequest)  returns (LogAndSettleResponse); // <-- baru
+  rpc LogAndSettle (LogAndSettleRequest)   returns (LogAndSettleResponse);
 }
-

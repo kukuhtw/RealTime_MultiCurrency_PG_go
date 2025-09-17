@@ -1,5 +1,6 @@
 // proto/gen/payments/v1/common.proto
 
+// proto/gen/common/v1/common.proto
 syntax = "proto3";
 package common.v1;
 option go_package = "github.com/example/payment-gateway-poc/proto/gen/common/v1;commonv1";
@@ -8,7 +9,7 @@ enum Currency {
   CURRENCY_UNSPECIFIED = 0;
   USD = 1;
   IDR = 2;
-  SGD = 3;  // Tambahan: Singapore Dollar
+  SGD = 3;
 }
 
 message Money {

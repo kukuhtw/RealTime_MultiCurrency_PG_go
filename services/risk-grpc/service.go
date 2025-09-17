@@ -53,14 +53,14 @@ func hitTwoPercent() bool {
 }
 
 type RiskService struct {
-	riskv1.UnimplementedRiskServer
+	riskv1.UnimplementedRiskServiceServer
 }
 
 func NewRiskServiceFromEnv() *RiskService {
 	return &RiskService{}
 }
 
-func (s *RiskService) Evaluate(ctx context.Context, req *riskv1.EvaluateRequest) (*riskv1.EvaluateResponse, error) {
+func (s *RiskService) Evaluate(ctx context.Context, req *riskv1.ScoreRequest) (*riskv1.EvaluateResponse, error) {
 	start := time.Now()
 	defer func() { riskLatency.Observe(time.Since(start).Seconds()) }()
 

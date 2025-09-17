@@ -8,18 +8,18 @@ import (
 	"strings"
 	"time"
 
-	fxv1 "github.com/example/payment-gateway-poc/proto/gen/fx/v1"
-	rv1 "github.com/example/payment-gateway-poc/proto/gen/risk/v1"
-	wv1 "github.com/example/payment-gateway-poc/proto/gen/wallet/v1"
+	fxv1   "github.com/example/payment-gateway-poc/proto/gen/fx/v1"
+	riskv1 "github.com/example/payment-gateway-poc/proto/gen/risk/v1"
+	wv1    "github.com/example/payment-gateway-poc/proto/gen/wallet/v1"
 
 	"github.com/example/payment-gateway-poc/services/api-gateway/queue"
 	m "github.com/example/payment-gateway-poc/pkg/metrics"
 )
 
 type Deps struct {
-	Fx     fxv1.FxClient
-	Wallet wv1.WalletClient
-	Risk   rv1.RiskClient
+	Fx     fxv1.FxServiceClient
+	Wallet wv1.WalletServiceClient
+	Risk   riskv1.RiskServiceClient
 	Bus    *queue.Bus
 }
 
@@ -59,7 +59,7 @@ func PaymentsHandler(d Deps) http.HandlerFunc {
 				writeJSON(w, http.StatusBadGateway, PaymentOut{Status: "FAILED", Reason: "fx_unavailable"})
 				return
 			}
-			amountIDR = fxRes.Amount
+			amountIDR = fxRes.GetAmount()
 			m.IncRequest("api-gateway", "SUCCESS", "FX")
 		}
 
@@ -70,7 +70,7 @@ func PaymentsHandler(d Deps) http.HandlerFunc {
 			writeJSON(w, http.StatusBadGateway, PaymentOut{Status: "FAILED", Reason: "wallet_unavailable"})
 			return
 		}
-		if acc.BalanceIdr < int64(amountIDR) {
+		if acc.GetBalanceIdr() < int64(amountIDR) {
 			m.IncRequest("api-gateway", "FAILED", "WALLET_INSUFFICIENT")
 			writeJSON(w, http.StatusOK, PaymentOut{Status: "FAILED", Reason: "insufficient_funds"})
 			return
@@ -78,7 +78,7 @@ func PaymentsHandler(d Deps) http.HandlerFunc {
 		m.IncRequest("api-gateway", "SUCCESS", "WALLET_CHECK")
 
 		// 3) Risk check
-		riskRes, err := d.Risk.Evaluate(ctx, &rv1.EvaluateRequest{
+		riskRes, err := d.Risk.Evaluate(ctx, &riskv1.ScoreRequest{
 			SenderId:      in.SenderID,
 			ReceiverId:    in.ReceiverID,
 			AmountIdr:     int64(amountIDR),
@@ -90,9 +90,9 @@ func PaymentsHandler(d Deps) http.HandlerFunc {
 			writeJSON(w, http.StatusBadGateway, PaymentOut{Status: "FAILED", Reason: "risk_unavailable"})
 			return
 		}
-		if !riskRes.Allow {
+		if !riskRes.GetAllow() {
 			m.IncRequest("api-gateway", "FAILED", "RISK_DENY")
-			writeJSON(w, http.StatusOK, PaymentOut{Status: "FAILED", Reason: riskRes.Reason})
+			writeJSON(w, http.StatusOK, PaymentOut{Status: "FAILED", Reason: riskRes.GetReason()})
 			return
 		}
 		m.IncRequest("api-gateway", "SUCCESS", "RISK_ALLOW")
@@ -130,10 +130,3 @@ func PaymentsHandler(d Deps) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, out)
 	}
 }
-
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
-}
-

@@ -13,7 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 
-	"github.com/example/payment-gateway-poc/services/api-gateway/clients"
+	"github.com/example/payment-gateway-poc/services/api-gateway/client"
 	"github.com/example/payment-gateway-poc/services/api-gateway/handlers"
 	"github.com/example/payment-gateway-poc/services/api-gateway/queue"
 	m "github.com/example/payment-gateway-poc/pkg/metrics"

@@ -28,7 +28,7 @@ func (b *Bus) Publish(ctx context.Context, key, payload []byte) error {
     return w.WriteMessages(ctx, kafka.Message{Key: key, Value: payload})
 }
 
-// WaitResult: tunggu message di topic result dg key yg sama
+// WaitResult: tunggu message di topic result dg key yang sama
 func (b *Bus) WaitResult(ctx context.Context, key []byte, timeout time.Duration) (value []byte, ok bool, err error) {
     ctx, cancel := context.WithTimeout(ctx, timeout)
     defer cancel()
@@ -36,7 +36,7 @@ func (b *Bus) WaitResult(ctx context.Context, key []byte, timeout time.Duration)
     r := kafka.NewReader(kafka.ReaderConfig{
         Brokers:  b.Brokers,
         Topic:    b.ResultTopic,
-        GroupID:  "", // stateless reader (tiap request)
+        GroupID:  "", // stateless reader (per-request)
         MinBytes: 1,
         MaxBytes: 10e6,
     })

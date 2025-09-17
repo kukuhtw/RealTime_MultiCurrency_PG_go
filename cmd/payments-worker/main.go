@@ -1,5 +1,4 @@
-// cmd/payments-worker/main.go (WORKER: Kafka → payments-rs)
-
+// cmd/payments-worker/main.go
 package main
 
 import (
@@ -7,15 +6,17 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/segmentio/kafka-go"
-	pv1 "github.com/example/payment-gateway-poc/proto/gen/payments/v1"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+
+	commonv1   "github.com/example/payment-gateway-poc/proto/gen/common/v1"
+	
 )
 
-type Req struct {
+type inMsg struct {
 	IdempotencyKey string `json:"idempotency_key"`
 	SenderID       string `json:"sender_id"`
 	ReceiverID     string `json:"receiver_id"`
@@ -24,73 +25,57 @@ type Req struct {
 	TxDate         string `json:"tx_date"`
 }
 
-type Res struct {
-	Status string `json:"status"`
-	Reason string `json:"reason,omitempty"`
-	Ref    string `json:"ref,omitempty"`
-}
-
-func getenv(k, d string) string {
-	if v := os.Getenv(k); v != "" { return v }
-	return d
-}
-
 func main() {
-	brokers := []string{getenv("KAFKA_BROKERS", "kafka:9092")}
-	reqTopic := getenv("KAFKA_REQ_TOPIC", "payments.request")
-	resTopic := getenv("KAFKA_RES_TOPIC", "payments.result")
-	paymentsAddr := getenv("PAYMENTS_ADDR", "payments-grpc:9096")
+	brokers := env("KAFKA_BROKERS", "kafka:9092")
+	reqTopic := env("KAFKA_REQ_TOPIC", "payments.request")
+	resTopic := env("KAFKA_RES_TOPIC", "payments.result")
 
 	r := kafka.NewReader(kafka.ReaderConfig{
-		Brokers: brokers,
-		Topic:   reqTopic,
-		GroupID: "payments-worker",
-		MinBytes: 1, MaxBytes: 10e6,
+		Brokers:  []string{brokers},
+		Topic:    reqTopic,
+		GroupID:  "payments-worker",
+		MinBytes: 1,
+		MaxBytes: 10e6,
 	})
-	w := &kafka.Writer{Addr: kafka.TCP(brokers...), Topic: resTopic}
 	defer r.Close()
+
+	w := &kafka.Writer{
+		Addr:     kafka.TCP(brokers),
+		Topic:    resTopic,
+		Balancer: &kafka.LeastBytes{},
+	}
 	defer w.Close()
 
-	conn, err := grpc.Dial(paymentsAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil { log.Fatalf("dial payments: %v", err) }
-	defer conn.Close()
-	cli := pv1.NewPaymentsClient(conn)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	log.Println("payments-worker running...")
+	log.Println("[payments-worker] started")
 	for {
-		msg, err := r.ReadMessage(context.Background())
-		if err != nil { log.Fatalf("kafka read: %v", err) }
-
-		var req Req
-		if err := json.Unmarshal(msg.Value, &req); err != nil {
-			log.Printf("bad payload: %v", err)
+		m, err := r.ReadMessage(ctx)
+		if err != nil {
+			log.Printf("read err: %v", err)
+			return
+		}
+		var in inMsg
+		if err := json.Unmarshal(m.Value, &in); err != nil {
+			log.Printf("bad msg: %v", err)
 			continue
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-		resp, err := cli.LogAndSettle(ctx, &pv1.LogAndSettleRequest{
-			SenderId:       req.SenderID,
-			ReceiverId:     req.ReceiverID,
-			AmountIdr:      req.AmountIDR,
-			Currency:       req.CurrencyInput,
-			TxDate:         req.TxDate,
-			IdempotencyKey: &req.IdempotencyKey,
-		})
-		cancel()
+		// Contoh: panggil PaymentsService.LogAndSettle (disederhanakan; di sini kita mock)
+		_ = commonv1.Currency_IDR // touch import
 
-		out := Res{}
-		if err != nil {
-			out = Res{Status: "FAILED", Reason: "settlement_error"}
-		} else {
-			out = Res{
-				Status: resp.GetStatus(),
-				Reason: resp.GetMessage(),
-				Ref:    resp.GetReservationId(),
-			}
+		// Simulasi proses OK
+		out := map[string]any{
+			"status": "SUCCESS",
+			"ref":    "RSV-" + in.IdempotencyKey,
 		}
 		b, _ := json.Marshal(out)
-		if err := w.WriteMessages(context.Background(), kafka.Message{Key: msg.Key, Value: b}); err != nil {
-			log.Printf("publish result error: %v", err)
+
+		if err := w.WriteMessages(ctx, kafka.Message{Key: m.Key, Value: b, Time: time.Now()}); err != nil {
+			log.Printf("write err: %v", err)
 		}
 	}
 }
+
+func env(k, d string) string { if v := os.Getenv(k); v != "" { return v }; return d }

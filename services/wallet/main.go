@@ -85,6 +85,7 @@ func (s *server) GetRandomAccounts(ctx context.Context, req *walletv1.GetRandomA
 	if n == 0 {
 		n = 2
 	}
+
 	q := fmt.Sprintf(`
 		SELECT account_id
 		FROM wallet_accounts
@@ -112,6 +113,7 @@ func (s *server) GetRandomAccounts(ctx context.Context, req *walletv1.GetRandomA
 	return &walletv1.GetRandomAccountsResponse{AccountIds: ids}, nil
 }
 
+
 func (s *server) GetBalance(ctx context.Context, req *walletv1.GetBalanceRequest) (*walletv1.GetBalanceResponse, error) {
 	if req.GetAccountId() == "" {
 		return nil, errors.New("account_id required")
@@ -127,7 +129,7 @@ func (s *server) GetBalance(ctx context.Context, req *walletv1.GetBalanceRequest
 	}
 	return &walletv1.GetBalanceResponse{
 		BalanceMinor: bal,
-		Currency:     commonv1.Currency_CURRENCY_IDR, // sesuaikan enum kamu
+		Currency:     commonv1.Currency_IDR,
 	}, nil
 }
 
