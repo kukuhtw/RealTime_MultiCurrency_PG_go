@@ -1,354 +1,261 @@
 
 
-```
 # Real-Time Multi-Currency Payment Gateway (PoC)
 
-Monorepo **Proof of Concept** untuk _real-time multi-currency payment gateway_ berbasis **microservices** (API Gateway, Payments, FX, Wallet, Risk) dengan **HTTP/JSON**, _observability_ (Prometheus + Grafana), serta _tooling_ untuk dummy data dan testing.
-
-> ⚠️ PoC ini untuk edukasi/demonstrasi. **Bukan** siap produksi (belum ada persistence DB, auth lengkap, HA, dsb.).
-
----
-
-## Arsitektur Singkat
-
-- **api-gateway**: _entrypoint_ HTTP, melayani _static frontend_ (embed Grafana) + health/metrics.
-- **payments**: _mock_ pembuatan transaksi pembayaran.
-- **fx**: _mock_ FX rate & conversion.
-- **wallet**: _mock_ informasi saldo.
-- **risk**: _mock_ score risiko transaksi.
-- **prometheus**: scrape metrics dari tiap service.
-- **grafana**: dashboard metrik (auto-provision via file JSON).
-
 ```
+==============================================================================
+Project : Real-Time Multi-Currency Payment Gateway (PoC)
+Version : 0.1.0
+Author  : Kukuh Tripamungkas Wicaksono (Kukuh TW)
+Email   : kukuhtw@gmail.com
+WhatsApp: https://wa.me/628129893706
+LinkedIn: https://id.linkedin.com/in/kukuhtw
+License : MIT (see LICENSE)
 
-Browser ──> API Gateway (:8080) ──> Services (:8081..8084)
-│
-└── embeds Grafana (:3000)
-Prometheus (:9090) <───── scrape ───── Services
-Grafana (:3000)  <────── datasource ─── Prometheus
-
+Summary : Monorepo Proof of Concept untuk real-time multi-currency payment
+          gateway berbasis microservices (API Gateway, Payments, FX, Wallet,
+          Risk) dengan gRPC, observability (Prometheus + Grafana), serta
+          tooling untuk dummy data dan testing.
+==============================================================================
 ```
 
 ---
 
-## Struktur Repo
+## 📖 Ringkasan
 
+Proyek ini adalah **Proof of Concept (PoC)** untuk sistem **pembayaran lintas mata uang real-time** berbasis **microservices**.
+Menggunakan kombinasi:
+
+* **Golang** → layanan domain (Wallet, FX, Risk, Payments, API Gateway)
+* **Rust** → layanan berperforma tinggi (Database handler, Payment Worker)
+* **gRPC** → komunikasi antar service
+* **Postgres** → database utama
+* **Kafka** → message broker untuk event-driven payment worker
+* **Prometheus + Grafana** → observability metrics & dashboard
+
+Tujuan: memberikan **arsitektur modular, scalable, resilient** yang dapat dijadikan blueprint untuk sistem pembayaran modern.
+
+---
+
+## ⚙️ Fitur Utama
+
+* **gRPC Microservices** untuk domain Wallet, FX, Risk, Payments.
+* **Multi-currency FX Service** dengan dummy kurs USD, IDR, SGD.
+* **Idempotency**: menghindari double spend/reservasi ganda.
+* **Risk Service**: rule engine sederhana untuk fraud detection.
+* **Async Worker (Rust)**: settlement via Kafka.
+* **Observability**: Prometheus + Grafana dashboard siap pakai.
+* **Testing Tools**: e2e tests, load tests, dummy data generator.
+
+---
+
+## 🏗️ Arsitektur
+
+```mermaid
+flowchart LR
+  C1[Client (Web/Mobile)]:::client
+  G[API Gateway (Go)\nHTTP + gRPC]:::gw
+
+  subgraph GO[Go Services]
+    W[Wallet Svc]:::svc
+    FX[FX Svc]:::svc
+    R[Risk Svc]:::svc
+    P[Payments Orchestrator]:::svc
+  end
+
+  subgraph RUST[Rust Services]
+    DB[[DB Svc (sqlx/Postgres)]]:::rust
+    PW[Payments Worker (Kafka Consumer)]:::rust
+  end
+
+  subgraph INFRA[Infra]
+    PG[(Postgres)]:::db
+    KF[(Kafka)]:::queue
+    PRM[(Prometheus)]:::obs
+    GRA[(Grafana)]:::obs
+  end
+
+  C1 --> G
+  G --> P
+  G --> W
+  G --> FX
+  G --> R
+  P --> R
+  P --> FX
+  P --> W
+  P --> DB
+  W --> DB
+  P -->|Produce| KF
+  PW -->|Consume| KF
+  PW --> DB
+  PW --> W
+  DB --- PG
+  G --> PRM
+  W --> PRM
+  FX --> PRM
+  R --> PRM
+  P --> PRM
+  PW --> PRM
+  DB --> PRM
+  PRM --> GRA
+
+  classDef client fill:#f3f9ff,stroke:#4a90e2,color:#0b3b6f;
+  classDef gw fill:#fff7ed,stroke:#f59e0b,color:#7a4a00;
+  classDef svc fill:#f0fdf4,stroke:#22c55e,color:#064e3b;
+  classDef rust fill:#fdf2f8,stroke:#ec4899,color:#6b003a;
+  classDef db fill:#eef2ff,stroke:#6366f1,color:#1e1b4b;
+  classDef queue fill:#eff6ff,stroke:#3b82f6,color:#0b3b6f;
+  classDef obs fill:#f1f5f9,stroke:#94a3b8,color:#0f172a;
 ```
 
-payment-gateway-poc/
-├─ README.md
-├─ Makefile
-├─ go.mod / go.sum
-│
-├─ pkg/                  # shared libs/proto (skeleton)
-│  ├─ proto/             # \*.proto (tambahkan sesuai kebutuhan)
-│  ├─ auth/              # helper auth/JWT (placeholder)
-│  ├─ tracing/           # OpenTelemetry init (placeholder)
-│  └─ errors/            # error wrapper (placeholder)
-│
-├─ services/
-│  ├─ api-gateway/
-│  │  ├─ main.go
-│  │  └─ static/index.html   # frontend minimal + embed Grafana
-│  ├─ payments/main.go
-│  ├─ fx/main.go
-│  ├─ wallet/main.go
-│  └─ risk/main.go
-│
-├─ tools/
-│  └─ cmd/dummygen/main.go   # generator CSV dummy transactions (-n)
-│
-├─ tests/
-│  ├─ data/dummy\_transactions.csv
-│  └─ integration/load\_from\_csv\_test.go
-│
-├─ deployments/
-│  ├─ docker/Dockerfile      # single multi-service builder
-│  └─ compose/docker-compose.dev.yaml
-│
-├─ grafana/
-│  ├─ grafana\_payment\_gateway\_dashboard.json
-│  └─ provisioning/
-│     ├─ dashboards/dashboard.yml
-│     └─ datasources/datasource.yml
-│
-└─ prometheus/prometheus.yml
+---
 
-````
+## 🔄 Sequence Diagram: MakePayment Flow
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Client
+  participant GW as API Gateway
+  participant Pay as Payments Orchestrator
+  participant Risk as Risk Svc
+  participant FX as FX Svc
+  participant Wal as Wallet Svc
+  participant DB as DB Svc (Rust)
+  participant K as Kafka
+  participant Wrk as Payment Worker (Rust)
+  participant PG as Postgres
+
+  Client->>GW: MakePayment(req)
+  GW->>Pay: gRPC MakePayment(req)
+  Pay->>Risk: Check(txnCtx)
+  Risk-->>Pay: ok
+  Pay->>FX: Convert(USD->IDR)
+  FX-->>Pay: rate + amount
+  Pay->>DB: reserve_funds(idempotency_key)
+  DB->>PG: INSERT reservation
+  DB-->>Pay: Ok{reservation_id}
+  Pay->>K: Produce "PAYMENT_RESERVED"
+  Pay-->>GW: Accepted + reservation_id
+  GW-->>Client: 202 Accepted
+
+  Wrk->>K: Consume "PAYMENT_RESERVED"
+  Wrk->>DB: commit_reservation()
+  DB->>PG: update reservation + ledger
+  par Balances
+    Wrk->>Wal: Debit(sender)
+    Wrk->>Wal: Credit(receiver)
+  end
+  Wrk->>K: Produce "PAYMENT_SETTLED"
+  Client->>GW: GetStatus(reservation_id)
+  GW->>Pay: GetStatus(reservation_id)
+  Pay-->>GW: success
+  GW-->>Client: 200 OK
+```
 
 ---
 
-## Prasyarat
+## 📂 Struktur Direktori
 
-- **Docker** & **Docker Compose v2**.
-- (Opsional) **Go** ≥ 1.22 untuk menjalankan `go` secara lokal.
-  - Jika **Go tidak terpasang**, semua build/test dapat dijalankan **via Docker** (disediakan target Makefile).
+Beberapa direktori penting:
+
+* `cmd/` → entrypoint tiap service (wallet-grpc, payments-grpc, dll)
+* `services/` → implementasi service (`api-gateway`, `db-rs`, `payments-rs`, dll)
+* `proto/` → definisi protobuf
+* `deployments/` → docker-compose, k8s manifest
+* `grafana/` & `prometheus/` → observability setup
+* `tests/` → e2e & load testing
+* `tools/` → generator dummy data
 
 ---
 
-## Quick Start (Dev – Docker Compose)
+## ⚙️ Setup Lingkungan
 
-Jalankan seluruh stack:
+### Prasyarat
+
+* Docker & Docker Compose
+* Go 1.23+
+* Rust (nightly, cargo, sqlx-cli)
+* Protoc compiler
+* Node.js (untuk e2e test)
+
+### Jalankan Stack
 
 ```bash
-make dev
-# atau manual:
-# docker compose -f deployments/compose/docker-compose.dev.yaml up -d --build
-````
+# Clone repo
+git clone https://github.com/your-org/realtime-payment-gateway.git
+cd realtime-payment-gateway
 
-Akses:
+# Generate dummy data
+make gen-dummy
 
-* **Frontend (embed Grafana)**: [http://localhost:8080](http://localhost:8080)
-* **Grafana**: [http://localhost:3000](http://localhost:3000)  (anonymous viewer aktif; embed diizinkan)
-* **Prometheus**: [http://localhost:9090](http://localhost:9090)
-* **Services**:
+# Jalankan stack dengan Docker Compose
+make dev-grpc
 
-  * payments: [http://localhost:8081](http://localhost:8081)
-  * fx: [http://localhost:8082](http://localhost:8082)
-  * wallet: [http://localhost:8083](http://localhost:8083)
-  * risk: [http://localhost:8084](http://localhost:8084)
-
-Hentikan stack:
-
-```bash
-make down
+# Stop
+make down-grpc
 ```
 
-Lihat log:
+### Akses
+
+* API Gateway → `http://localhost:8080`
+* Prometheus → `http://localhost:9090`
+* Grafana → `http://localhost:3000`
+
+---
+
+## 🔌 Endpoint gRPC
+
+* **WalletService**: `GetBalance`, `Debit`, `Credit`
+* **FXService**: `Convert(From, To, Amount)`
+* **PaymentsService**: `MakePayment`, `GetStatus`
+* **RiskService**: `Check(Transaction)`
+
+---
+
+## 📊 Monitoring
+
+* Prometheus config → `prometheus/prometheus.yml`
+* Grafana dashboard → `grafana/grafana_payment_gateway_dashboard.json`
+
+---
+
+## 🧪 Testing
+
+### Go Integration Test
 
 ```bash
-make logs
+go test ./tests/integration/...
 ```
 
-Status container:
+### Node.js Load Test
 
 ```bash
-make ps
+node tests/e2e/payment_load.js
+```
+
+### gRPC Test dari CSV
+
+```bash
+node tests/e2e/payment_grpc_from_csv.js
 ```
 
 ---
 
-## Smoke Test Cepat
+## 📌 Catatan
 
-Health & metrics:
-
-```bash
-curl -s http://localhost:8080/healthz | jq
-curl -s http://localhost:8080/metrics | head
-
-curl -s http://localhost:8081/healthz | jq
-curl -s http://localhost:8081/metrics | head
-```
-
-Fungsi *mock*:
-
-```bash
-# Payments
-curl -s -X POST http://localhost:8081/payments \
-  -H "Content-Type: application/json" \
-  -d '{"id":"PAY-001","currency":"USD","amount":123.45,"source_account":"ACC_SRC_ABC","destination_account":"ACC_DST_DEF"}' | jq
-
-# FX
-curl -s "http://localhost:8082/rate?base=USD&quote=IDR" | jq
-curl -s "http://localhost:8082/convert?from=USD&to=IDR&amount=1" | jq
-
-# Wallet
-curl -s http://localhost:8083/balance/ACC_001 | jq
-
-# Risk
-curl -s -X POST http://localhost:8084/score \
-  -H "Content-Type: application/json" \
-  -d '{"account":"ACC_001","amount":999.99,"currency":"USD"}' | jq
-```
+* Rust services dipakai untuk path kritikal performa tinggi.
+* Go services dipakai untuk orchestrator & domain logic.
+* PoC ini bisa jadi dasar implementasi production.
 
 ---
 
-## Observability
+## 👨‍💻 Kontributor
 
-* **Prometheus**: buka **Status → Targets** dan pastikan semua job `UP`.
-* **Grafana**:
+* **Kukuh Tripamungkas Wicaksono (Kukuh TW)**
 
-  * Dashboard disediakan melalui `grafana/grafana_payment_gateway_dashboard.json`.
-  * Embed URL yang dipakai `services/api-gateway/static/index.html`:
-
-    ```
-    http://localhost:3000/d/paygw-poc?orgId=1&kiosk
-    ```
-  * Panel contoh: *Go goroutines by service*, *RSS Memory*, *CPU seconds rate*, *Targets UP*, *Scrape duration*.
-
-> Jika iframe di 8080 sempat “Page not found”, pastikan file `index.html` terbaru ter-*serve* (rebuild api-gateway atau gunakan bind-mount untuk `/app/static` di compose).
+  * ✉️ Email: [kukuhtw@gmail.com](mailto:kukuhtw@gmail.com)
+  * 💬 WhatsApp: [https://wa.me/628129893706](https://wa.me/628129893706)
+  * 🔗 LinkedIn: [id.linkedin.com/in/kukuhtw](https://id.linkedin.com/in/kukuhtw)
 
 ---
-
-## Dummy Data (CSV)
-
-Generator: `tools/cmd/dummygen`
-Output default: `tests/data/dummy_transactions.csv`
-
-### Generate via Docker (tanpa Go lokal)
-
-```bash
-# 100 baris (default)
-make dummy-docker
-
-# 1000 baris
-make dummy-docker N=1000
-```
-
-Atau langsung:
-
-```bash
-docker run --rm -v "$(pwd)":/app -w /app \
-  --entrypoint /usr/local/go/bin/go golang:1.22 run ./tools/cmd/dummygen -n 1000
-```
-
-Verifikasi:
-
-```bash
-wc -l tests/data/dummy_transactions.csv
-# 1001 (1 header + 1000 data)
-```
-
----
-
-## Testing
-
-### Integration test (CSV loader)
-
-```bash
-# via Docker (works even if Go not installed)
-make test-integration-docker
-```
-
-### Semua paket
-
-```bash
-# via Docker
-make test-docker
-```
-
-Jika memiliki Go lokal:
-
-```bash
-make test
-```
-
-> **Catatan:** file `deployments/docker/Dockerfile` **bukan** kode Go. Pastikan namanya **Dockerfile** (jangan `Dockerfile.go`) agar `go test ./...` tidak menganggapnya file Go (kalau `.go` akan error `illegal character U+0023 '#')`.
-
----
-
-## Makefile – Target Penting
-
-* `make dev` – *Up* stack dev (Compose, rebuild bila perlu).
-* `make down` – stop & remove containers.
-* `make logs` – tail logs semua service.
-* `make ps` – status container.
-* `make dummy-docker N=1000` – generate CSV dummy (via Docker; ubah jumlah dengan `N`).
-* `make test-integration-docker` – jalanin integration test (Dockerized).
-* `make test-docker` – jalanin semua test (Dockerized).
-* `make test` – jalanin semua test (butuh Go lokal).
-* `make build` – build semua paket (Go lokal atau fallback Docker – tergantung konfigurasi Makefile kamu).
-
----
-
-## Endpoints
-
-| Service     | Port | Healthz    | Metrics    | Catatan                           |
-| ----------- | ---- | ---------- | ---------- | --------------------------------- |
-| api-gateway | 8080 | `/healthz` | `/metrics` | *serve* `static/` + embed Grafana |
-| payments    | 8081 | `/healthz` | `/metrics` | `POST /payments`                  |
-| fx          | 8082 | `/healthz` | `/metrics` | `/rate`, `/convert`               |
-| wallet      | 8083 | `/healthz` | `/metrics` | `/balance/{id}`                   |
-| risk        | 8084 | `/healthz` | `/metrics` | `POST /score`                     |
-| prometheus  | 9090 | –          | –          | UI & query di 9090                |
-| grafana     | 3000 | –          | –          | Anonymous + embedding             |
-
----
-
-## Development Notes
-
-### Hot reload static frontend
-
-Untuk menghindari rebuild image saat mengubah `services/api-gateway/static/index.html`, aktifkan **bind-mount**:
-
-```yaml
-# deployments/compose/docker-compose.dev.yaml (service api-gateway)
-volumes:
-  - ../../services/api-gateway/static:/app/static:ro
-```
-
-### Jika Go lokal belum terpasang
-
-Semua perintah `go` dalam README bisa diganti dengan **Dockerized Go**:
-
-```bash
-docker run --rm -v "$(pwd)":/app -w /app \
-  --entrypoint /usr/local/go/bin/go golang:1.22 <COMMAND>
-# contoh:
-# ... go test ./... -v
-# ... go run ./tools/cmd/dummygen -n 1000
-```
-
----
-
-## Troubleshooting
-
-* **`Makefile: missing separator`**
-  Pastikan baris perintah setelah target memakai **TAB** (bukan spasi).
-
-* **`go: Permission denied` / `go: not found` saat `make test`**
-  Jalankan `make test-docker` atau pasang Go lokal. README ini sudah menyiapkan target Dockerized.
-
-* **`illegal character U+0023 '#'` saat `go test ./...`**
-  Ubah nama `deployments/docker/Dockerfile.go` → `deployments/docker/Dockerfile`.
-
-* **Grafana iframe “Page not found” di 8080**
-
-  * Pastikan URL iframe berbasis UID: `http://localhost:3000/d/paygw-poc?orgId=1&kiosk`.
-  * Pastikan `index.html` terbaru tersaji (rebuild api-gateway atau pakai bind-mount).
-  * Env grafana: `GF_AUTH_ANONYMOUS_ENABLED=true`, `GF_SECURITY_ALLOW_EMBEDDING=true`.
-
-* **Compose error `services.<name> additional properties 'args' not allowed`**
-  Pastikan `args:` berada **di bawah `build:`** (indentasi tepat).
-
-* **Prometheus/Grafana blank**
-  Cek **Prometheus → Status → Targets** harus `UP`.
-  Re-provision Grafana: `docker compose ... restart grafana`.
-
----
-
-## Protobuf / gRPC (Placeholder)
-
-Folder `pkg/proto/*.proto` disiapkan untuk menambah kontrak gRPC. Contoh *workflow*:
-
-```bash
-# install tool chain (buf/protoc) sesuai preferensi Anda
-# contoh:
-# buf generate
-# atau
-# protoc --go_out=. --go-grpc_out=. pkg/proto/*.proto
-```
-
-Tambahkan target `proto` di Makefile sesuai tool yang Anda gunakan.
-
----
-
-## Security & Production Gaps
-
-* Tidak ada DB/persistence.
-* Auth/authorization dummy.
-* Tidak ada rate limiting, circuit breaker, retry, tracing lengkap.
-* TLS, secret management, dan hardening kontainer belum di-set.
-
-> Untuk produksi, siapkan: penyimpanan transaksi, idempotency key, retry-safe queue, audit log, observability end-to-end (trace), *blue/green* deployment, dsb.
-
----
-
-## Lisensi
-
-Tentukan lisensi sesuai kebutuhan (MIT/Apache-2.0/dll).
-
----
-
-```
-
