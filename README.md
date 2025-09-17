@@ -176,25 +176,12 @@ make down-grpc
 
 ## 🧪 Testing
 
-### Go Integration Test
+### Start
 
 ```bash
-go test ./tests/integration/...
+./clean-start.sh
 ```
 
-### Node.js Load Test
-
-```bash
-node tests/e2e/payment_load.js
-```
-
-### gRPC Test dari CSV
-
-```bash
-node tests/e2e/payment_grpc_from_csv.js
-```
-
----
 
 ## 📌 Catatan
 
