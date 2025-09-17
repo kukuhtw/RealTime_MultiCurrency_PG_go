@@ -150,11 +150,6 @@ make dev-grpc
 make down-grpc
 ```
 
-### Akses
-
-Oke, kita tambahkan daftar **published ports** ke README agar jelas mapping service ↔ port. Saya sisipkan di bagian **Setup → Akses**, setelah penjelasan API Gateway, Prometheus, dan Grafana.
-
-Berikut versi revisi:
 
 ---
 
