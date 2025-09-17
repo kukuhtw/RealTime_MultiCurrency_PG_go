@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1.6
+# filename:Dockerfile.db-rs
+# syntax=docker/dockerfile:1.6
+FROM rust:1.80 as build
+WORKDIR /app
+
+# caching cargo
+ENV CARGO_HOME=/usr/local/cargo
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    true
+
+COPY . .
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    bash -lc "cd services/db-rs && cargo build --release"
+
+FROM debian:stable-slim
+WORKDIR /app
+# runtime deps (TLS & timezone & openssl/libssl untuk sqlx-postgres)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates tzdata libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /app/services/db-rs/target/release/db-rs /app/db-rs
+ENV RUST_LOG=info
+EXPOSE 9095 9105
+ENTRYPOINT ["/app/db-rs"]

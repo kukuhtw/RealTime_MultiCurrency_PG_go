@@ -1,56 +1,63 @@
 // cmd/payments-grpc/main.go
-
 package main
 
 import (
+  "context"
   "log"
   "net"
   "net/http"
+  "os"
+  "os/signal"
+  "syscall"
 
   gp "github.com/grpc-ecosystem/go-grpc-prometheus"
   "github.com/prometheus/client_golang/prometheus/promhttp"
   "google.golang.org/grpc"
-  "google.golang.org/grpc/credentials/insecure"
 
-  paymentsv1 "github.com/kukuhtw/RealTime_MultiCurrency_PG_go/gen/payments/v1"
-  riskv1 "github.com/kukuhtw/RealTime_MultiCurrency_PG_go/gen/risk/v1"
-  walletv1 "github.com/kukuhtw/RealTime_MultiCurrency_PG_go/gen/wallet/v1"
-  fxv1 "github.com/kukuhtw/RealTime_MultiCurrency_PG_go/gen/fx/v1"
-  "github.com/kukuhtw/RealTime_MultiCurrency_PG_go/internal/grpcserver"
+  payv1 "github.com/example/payment-gateway-poc/proto/gen/payments/v1"
+  "github.com/example/payment-gateway-poc/internal/grpcserver"
 )
 
 func main() {
-  // koneksi ke service lain
-  riskConn, _ := grpc.Dial("localhost:9094", grpc.WithTransportCredentials(insecure.NewCredentials()))
-  walConn, _ := grpc.Dial("localhost:9093", grpc.WithTransportCredentials(insecure.NewCredentials()))
-  fxConn, _ := grpc.Dial("localhost:9092", grpc.WithTransportCredentials(insecure.NewCredentials()))
-
-  // gRPC server dengan prometheus interceptors
-  grpcSrv := grpc.NewServer(
+  grpcServer := grpc.NewServer(
     grpc.UnaryInterceptor(gp.UnaryServerInterceptor),
     grpc.StreamInterceptor(gp.StreamServerInterceptor),
   )
-  gp.Register(grpcSrv)
 
-  // register service Payments
-  paymentsv1.RegisterPaymentsServiceServer(grpcSrv, &grpcserver.PaymentsServer{
-    Risk:   riskv1.NewRiskServiceClient(riskConn),
-    Wallet: walletv1.NewWalletServiceClient(walConn),
-    Fx:     fxv1.NewFxServiceClient(fxConn),
-  })
+  // ==== REGISTRASI SERVICE UTAMA (pilih yang sesuai generate) ====
+  // payv1.RegisterPaymentsServer(grpcServer, &grpcserver.PaymentsServer{})
+  payv1.RegisterPaymentsServiceServer(grpcServer, &grpcserver.PaymentsServer{})
 
-  // listener gRPC
+  // Default gRPC metrics
+  gp.Register(grpcServer)
+
+  lis, err := net.Listen("tcp", ":9091")
+  if err != nil {
+    log.Fatalf("[payments-grpc] listen :9091: %v", err)
+  }
   go func() {
-    lis, err := net.Listen("tcp", ":9091")
-    if err != nil {
-      log.Fatal(err)
+    log.Println("[payments-grpc] serving gRPC on :9091")
+    if err := grpcServer.Serve(lis); err != nil {
+      log.Fatalf("[payments-grpc] grpc serve: %v", err)
     }
-    log.Println("payments gRPC :9091")
-    log.Fatal(grpcSrv.Serve(lis))
   }()
 
-  // listener HTTP untuk /metrics
-  http.Handle("/metrics", promhttp.Handler())
-  log.Println("payments metrics :9101/metrics")
-  log.Fatal(http.ListenAndServe(":9101", nil))
+  mux := http.NewServeMux()
+  mux.Handle("/metrics", promhttp.Handler())
+  metricsSrv := &http.Server{Addr: ":9101", Handler: mux}
+  go func() {
+    log.Println("[payments-grpc] serving metrics on :9101 /metrics")
+    if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+      log.Fatalf("[payments-grpc] metrics serve: %v", err)
+    }
+  }()
+
+  // Graceful shutdown
+  sig := make(chan os.Signal, 1)
+  signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+  <-sig
+  log.Println("[payments-grpc] shutting down...")
+  grpcServer.GracefulStop()
+  _ = metricsSrv.Shutdown(context.Background())
+  log.Println("[payments-grpc] bye")
 }

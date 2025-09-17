@@ -1,0 +1,63 @@
+# syntax=docker/dockerfile:1.6
+
+########## BUILD STAGE ##########
+FROM rustlang/rust:nightly AS build
+WORKDIR /app
+SHELL ["/bin/bash", "-lc"]
+
+# Pastikan cargo di PATH
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:/usr/local/rustup/bin:/root/.cargo/bin:$PATH
+
+# Tool umum utk crates (openssl, certs)
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends pkg-config libssl-dev ca-certificates protobuf-compiler \
+ && update-ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# Arg: path crate & optional bin name
+ARG SERVICE
+ARG BIN=""
+
+# Copy seluruh sumber
+COPY . .
+
+# Build crate spesifik
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    bash -eo pipefail -c '\
+      export PATH="/usr/local/cargo/bin:/root/.cargo/bin:/usr/local/rustup/bin:$PATH"; \
+      echo ">> Using PATH: $PATH"; which cargo || true; cargo --version || true; \
+      test -n "$SERVICE"; \
+      MANIFEST="$SERVICE/Cargo.toml"; \
+      if [ -z "$BIN" ]; then \
+        PKG=$(awk -F= "/^\\s*name\\s*=\\s*/{gsub(/[\x22\x27 ]/,\"\",\$2); print \$2; exit}" "$MANIFEST" || true); \
+      else \
+        PKG="$BIN"; \
+      fi; \
+      echo ">> Building SERVICE=$SERVICE (bin=$PKG)"; \
+      cargo build --release --manifest-path "$MANIFEST"; \
+      OUT="target/release/$PKG"; \
+      if [ -z "$PKG" ] || [ ! -f "$OUT" ]; then \
+        OUT=$(ls -1t target/release | head -n1); \
+        OUT="target/release/$OUT"; \
+      fi; \
+      echo ">> Built: $OUT"; \
+      install -D -m 0755 "$OUT" /out/app \
+    '
+
+########## RUNTIME STAGE ##########
+FROM debian:bookworm-slim
+WORKDIR /app
+SHELL ["/bin/bash", "-lc"]
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates libssl3 tzdata \
+ && update-ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /out/app /app/app
+ENV TZ=Asia/Jakarta
+EXPOSE 8080 9090 9100 9101 9102 9103 9104
+ENTRYPOINT ["/app/app"]

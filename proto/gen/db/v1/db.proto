@@ -1,0 +1,81 @@
+// proto/gen/db/v1/db.proto
+
+syntax = "proto3";
+
+package db.v1;
+
+option go_package = "github.com/example/payment-gateway-poc/proto/gen/db/v1;dbv1";
+
+// Amount dalam "IDR minor units" (rupiah) agar aman dari floating-point.
+// idempotency_key wajib sama persis untuk retry yang ingin dianggap sama.
+
+message CheckBalanceRequest {
+  string account_id = 1;
+  int64 amount_idr  = 2; // boleh 0 jika hanya ingin query balance
+}
+
+message CheckBalanceResponse {
+  bool  sufficient      = 1;
+  int64 current_balance = 2; // dalam IDR
+}
+
+enum TxStatus {
+  TX_STATUS_UNSPECIFIED   = 0;
+  TX_STATUS_OK            = 1;
+  TX_STATUS_INSUFFICIENT  = 2;
+  TX_STATUS_DUPLICATE     = 3;
+  TX_STATUS_NOT_FOUND     = 4;
+  TX_STATUS_ERROR         = 5;
+}
+
+message ReserveFundsRequest {
+  string idempotency_key = 1;
+  string sender_id       = 2;
+  string receiver_id     = 3;
+  int64  amount_idr      = 4;
+  string currency_input  = 5; // "IDR","USD","SGD" (as submitted)
+  string created_at_iso  = 6; // ISO8601, optional
+}
+
+message ReserveFundsResponse {
+  TxStatus status         = 1;
+  string   reservation_id = 2; // kalau OK
+  int64    current_balance= 3; // saldo sender setelah reserve (atau sebelum jika fail)
+  string   message        = 4; // alasan jika fail
+}
+
+message CommitReservationRequest {
+  string reservation_id   = 1;
+  string idempotency_key  = 2;
+}
+
+message CommitReservationResponse {
+  TxStatus status = 1;
+  string   message= 2;
+}
+
+message RollbackReservationRequest {
+  string reservation_id  = 1;
+  string reason          = 2;
+}
+
+message RollbackReservationResponse {
+  TxStatus status = 1;
+  string   message= 2;
+}
+
+message GetRandomAccountsRequest {
+  // optional constraints later
+}
+message GetRandomAccountsResponse {
+  string sender_id   = 1;
+  string receiver_id = 2;
+}
+
+service Db {
+  rpc CheckBalance          (CheckBalanceRequest)         returns (CheckBalanceResponse);
+  rpc ReserveFunds          (ReserveFundsRequest)         returns (ReserveFundsResponse);
+  rpc CommitReservation     (CommitReservationRequest)    returns (CommitReservationResponse);
+  rpc RollbackReservation   (RollbackReservationRequest)  returns (RollbackReservationResponse);
+  rpc GetRandomAccounts     (GetRandomAccountsRequest)    returns (GetRandomAccountsResponse);
+}

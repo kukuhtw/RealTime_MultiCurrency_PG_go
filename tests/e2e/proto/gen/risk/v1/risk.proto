@@ -1,0 +1,17 @@
+syntax = "proto3";
+package risk.v1;
+option go_package = "github.com/example/payment-gateway-poc/proto/gen/risk/v1;riskv1";
+
+message ScoreRequest {
+  string payment_id   = 1;
+  int64  amount_minor = 2;
+  string user_id      = 3;
+}
+message ScoreResponse {
+  double score = 1;
+  bool   allow = 2;
+}
+
+service RiskService {
+  rpc Score (ScoreRequest) returns (ScoreResponse);
+}

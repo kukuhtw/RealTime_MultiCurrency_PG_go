@@ -1,0 +1,25 @@
+// proto/gen/fx/v1/fx.proto
+syntax = "proto3";
+
+package fx.v1;
+
+option go_package = "github.com/example/payment-gateway-poc/proto/gen/fx/v1;fxv1";
+
+service FxService {
+  rpc UpdateRates(UpdateRatesRequest) returns (UpdateRatesResponse);
+}
+
+message Rate {
+  string base_currency = 1;
+  string quote_currency = 2;
+  double rate = 3;
+}
+
+message UpdateRatesRequest {
+  repeated Rate rates = 1;
+}
+
+message UpdateRatesResponse {
+  bool success = 1;
+  string message = 2;
+}

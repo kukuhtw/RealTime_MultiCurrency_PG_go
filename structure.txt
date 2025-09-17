@@ -1,0 +1,212 @@
+.
+├── .dockerignore
+├── Makefile
+├── README.md
+├── README_GRPC.md
+├── aaa
+├── clean-start.sh
+├── cmd
+│   ├── fx-grpc
+│   │   └── main.go
+│   ├── payments-grpc
+│   │   └── main.go
+│   ├── payments-worker
+│   │   └── main.go
+│   ├── risk-grpc
+│   │   └── main.go
+│   └── wallet-grpc
+│       └── main.go
+├── complete_list.txt
+├── data
+│   └── transactions.csv
+├── deployments
+│   ├── compose
+│   │   ├── docker-compose.dev.v2.yaml
+│   │   ├── docker-compose.dev.v3.yaml
+│   │   └── prometheus.yml
+│   ├── docker
+│   │   ├── Dockerfile
+│   │   ├── Dockerfile.db-rs
+│   │   ├── Dockerfile.payments-rs
+│   │   └── scripts
+│   │       └── start.sh
+│   └── k8s
+│       ├── api-gateway.yaml
+│       ├── fx.yaml
+│       ├── payments.yaml
+│       ├── risk.yaml
+│       └── wallet.yaml
+├── files.txt
+├── filestructure
+├── folders.txt
+├── go.mod
+├── go.sum
+├── go1.23.1.linux-amd64.tar.gz
+├── grafana
+│   ├── dashboards
+│   ├── grafana_payment_gateway_dashboard.json
+│   └── provisioning
+│       ├── dashboards
+│       │   └── dashboards.yaml
+│       ├── datasources
+│       │   └── datasources.yaml
+│       └── payment_poc.json
+├── internal
+│   └── grpcserver
+│       ├── fx.go
+│       ├── payments.go
+│       ├── risk.go
+│       └── wallet.go
+├── main.go
+├── mysignature
+├── output.txt
+├── pkg
+│   ├── auth
+│   ├── errors
+│   │   └── errors.go
+│   ├── metrics
+│   │   └── metrics.go
+│   ├── proto
+│   │   ├── fx.proto
+│   │   └── payments.proto
+│   └── tracing
+│       └── doc.go
+├── prometheus
+│   └── prometheus.yml
+├── proto
+│   └── gen
+│       ├── common
+│       │   └── v1
+│       │       ├── common.pb.go
+│       │       └── common.proto
+│       ├── db
+│       │   └── v1
+│       │       └── db.proto
+│       ├── fx
+│       │   └── v1
+│       │       ├── fx.pb.go
+│       │       ├── fx.proto
+│       │       ├── fx_admin.proto
+│       │       └── fx_grpc.pb.go
+│       ├── payments
+│       │   └── v1
+│       │       ├── payments.pb.go
+│       │       ├── payments.proto
+│       │       └── payments_grpc.pb.go
+│       ├── risk
+│       │   └── v1
+│       │       ├── risk.pb.go
+│       │       ├── risk.proto
+│       │       ├── risk_admin.proto
+│       │       └── risk_grpc.pb.go
+│       └── wallet
+│           └── v1
+│               ├── wallet.pb.go
+│               ├── wallet.proto
+│               ├── wallet_admin.proto
+│               └── wallet_grpc.pb.go
+├── seeds
+│   ├── customers.json
+│   ├── fx_rates.json
+│   ├── risk_rules.json
+│   └── wallet_accounts.json
+├── services
+│   ├── api-gateway
+│   │   ├── admin
+│   │   │   └── admin.go
+│   │   ├── client
+│   │   │   ├── grpc.go
+│   │   │   └── grpc_clients.go
+│   │   ├── fx_client.go
+│   │   ├── handlers
+│   │   │   ├── payments.go
+│   │   │   ├── random_accounts.go
+│   │   │   └── types.go
+│   │   ├── main.go
+│   │   ├── queue
+│   │   │   └── kafka.go
+│   │   └── static
+│   │       └── index.html
+│   ├── db-rs
+│   │   ├── Cargo.toml
+│   │   ├── build.rs
+│   │   └── src
+│   │       ├── db.rs
+│   │       ├── handlers.rs
+│   │       ├── main.rs
+│   │       ├── repo.rs
+│   │       ├── schema.sql
+│   │       └── store.rs
+│   ├── fx-grpc
+│   │   └── main.go
+│   ├── payments-grpc
+│   │   └── main.go
+│   ├── payments-rs
+│   │   ├── Cargo.toml
+│   │   └── src
+│   │       ├── idempo.rs
+│   │       └── main.rs
+│   ├── risk-grpc
+│   │   ├── main.go
+│   │   └── service.go
+│   └── wallet
+│       └── main.go
+├── size_analysis.txt
+├── structure.txt
+├── tests
+│   ├── data
+│   │   └── dummy_transactions.csv
+│   └── e2e
+│       ├── common
+│       │   └── v1
+│       │       ├── common.pb.go
+│       │       └── common.proto
+│       ├── payment_grpc_from_csv.js
+│       ├── payment_grpc_test.js
+│       ├── payment_load.js
+│       ├── payment_load_from_csv.js
+│       ├── payments
+│       │   └── v1
+│       │       ├── payments.pb.go
+│       │       ├── payments.proto
+│       │       └── payments_grpc.pb.go
+│       └── proto
+│           └── gen
+│               ├── common
+│               │   └── v1
+│               │       ├── common.pb.go
+│               │       └── common.proto
+│               ├── fx
+│               │   └── v1
+│               │       ├── fx.pb.go
+│               │       ├── fx.proto
+│               │       ├── fx_admin.proto
+│               │       └── fx_grpc.pb.go
+│               ├── payments
+│               │   └── v1
+│               │       ├── payments.pb.go
+│               │       ├── payments.proto
+│               │       └── payments_grpc.pb.go
+│               ├── risk
+│               │   └── v1
+│               │       ├── risk.pb.go
+│               │       ├── risk.proto
+│               │       ├── risk_admin.proto
+│               │       └── risk_grpc.pb.go
+│               ├── v1
+│               └── wallet
+│                   └── v1
+│                       ├── wallet.pb.go
+│                       ├── wallet.proto
+│                       ├── wallet_admin.proto
+│                       └── wallet_grpc.pb.go
+├── tests
+│   └── integration
+│       └── load_from_csv_test.go
+└── tools
+    ├── cmd
+    │   └── dummygen
+    │       └── main.go
+    ├── generate_dummy_data.py
+    ├── generate_transaksi.py
+    └── generate_wallets.py

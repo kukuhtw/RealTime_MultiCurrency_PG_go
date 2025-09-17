@@ -1,0 +1,18 @@
+# artefak & cache umum
+bin/
+dist/
+.idea/
+.vscode/
+.git/
+.gitignore
+**/*.swp
+**/*.DS_Store
+
+# pastikan source tidak terignore
+!services/
+!cmd/
+!internal/
+!proto/
+!pkg/
+!go.mod
+!go.sum

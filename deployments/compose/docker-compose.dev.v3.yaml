@@ -1,0 +1,276 @@
+name: compose
+
+x-go-svc: &go_svc
+  context: ../../
+  dockerfile: deployments/docker/Dockerfile.go-svc
+
+networks:
+  payment-network:
+    name: payment-network
+
+volumes:
+  prom_data: {}
+  grafana-data: {}
+  kafka_data: {}
+  pg_data: {}
+
+services:
+  # ======================
+  # Infra: Postgres (satu-satunya DB fisik)
+  # ======================
+  postgres:
+    image: postgres:16
+    container_name: compose-postgres
+    environment:
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: poc
+    ports:
+      - "15432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ../../services/db-rs/src/schema.sql:/docker-entrypoint-initdb.d/00-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d poc"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks: { payment-network: {} }
+
+  # ======================
+  # Infra: Kafka (single-node KRaft)
+  # ======================
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: compose-kafka
+    environment:
+      - KAFKA_ENABLE_KRAFT=yes
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/9092'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: { payment-network: {} }
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: compose-kafka-ui
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+    ports:
+      - "9081:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks: { payment-network: {} }
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter
+    command: ["--kafka.server=kafka:9092"]
+    ports:
+      - "9308:9308"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks: { payment-network: {} }
+
+    # ======================
+  # Rust gRPC services
+  # ======================
+  payments-rs:
+    build:
+      context: ../../
+      dockerfile: deployments/docker/Dockerfile.rust
+      args:
+        SERVICE: services/payments-rs
+        # BIN: payments-rs   # isi jika nama bin beda dari package.name
+    image: compose-payments-rs
+    environment:
+      GRPC_ADDR: ":9096"
+      METRICS_ADDR: ":9106"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-rs:
+        condition: service_started
+    ports:
+      - "19096:9096"
+      - "19106:9106"
+    networks: { payment-network: {} }
+
+  db-rs:
+    build:
+      context: ../../
+      dockerfile: deployments/docker/Dockerfile.rust
+      args:
+        SERVICE: services/db-rs
+        # BIN: db-rs
+    image: compose-db-rs
+    environment:
+      DATABASE_URL: postgresql://postgres:secret@postgres:5432/poc
+      GRPC_ADDR: ":9095"
+      METRICS_ADDR: ":9105"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "19095:9095"
+      - "19105:9105"
+    networks: { payment-network: {} }
+
+
+  # ======================
+  # Go services
+  # ======================
+  api-gateway:
+    build:
+      context: ../../
+      dockerfile: deployments/docker/Dockerfile.api-gateway
+    image: compose-api-gateway
+    environment:
+      FX_ADDR: fx-grpc:9102
+      WALLET_ADDR: wallet-grpc:9093
+      RISK_ADDR: risk-grpc:9094
+      PAYMENTS_ADDR: payments-rs:9096
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_REQ_TOPIC: payments.request
+      KAFKA_RES_TOPIC: payments.result
+    ports:
+      - "18080:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      wallet-grpc:
+        condition: service_started
+      payments-rs:
+        condition: service_started
+      risk-grpc:
+        condition: service_started
+      fx-grpc:
+        condition: service_started
+    networks: { payment-network: {} }
+
+  wallet-grpc:
+    build:
+      <<: *go_svc
+      args:
+        SERVICE: services/wallet
+    image: compose-wallet-grpc
+    environment:
+      DATABASE_URL: postgresql://postgres:secret@postgres:5432/poc?sslmode=disable
+      GRPC_ADDR: ":9093"
+      METRICS_ADDR: ":9103"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "19093:9093"
+      - "19103:9103"
+    networks: { payment-network: {} }
+
+  fx-grpc:
+    build:
+      <<: *go_svc
+      args:
+        SERVICE: services/fx-grpc
+    image: compose-fx-grpc
+    environment:
+      GRPC_ADDR: ":9102"
+    ports:
+      - "19102:9102"
+    networks: { payment-network: {} }
+
+  risk-grpc:
+    build:
+      <<: *go_svc
+      args:
+        SERVICE: services/risk-grpc
+    image: compose-risk-grpc
+    environment:
+      GRPC_ADDR: ":9094"
+      METRICS_ADDR: ":9104"
+    ports:
+      - "19094:9094"
+      - "19104:9104"
+    networks: { payment-network: {} }
+
+  # ======================
+  # Worker (Kafka -> payments-rs)
+  # ======================
+  payments-worker:
+    build:
+      <<: *go_svc
+      args:
+        SERVICE: cmd/payments-worker
+    image: compose-payments-worker
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_REQ_TOPIC: payments.request
+      KAFKA_RES_TOPIC: payments.result
+      PAYMENTS_ADDR: payments-rs:9096
+    depends_on:
+      kafka:
+        condition: service_healthy
+      payments-rs:
+        condition: service_started
+    networks: { payment-network: {} }
+
+  # ======================
+  # Data seeding (on-demand)
+  # ======================
+  data-loader:
+    image: python:3.12-slim
+    working_dir: /app
+    networks: { payment-network: {} }
+    volumes:
+      - ../../tools:/app
+    environment:
+      DATABASE_URL: postgresql://postgres:secret@postgres:5432/poc
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      bash -lc "pip install --no-cache-dir psycopg[binary] &&
+                python generate_dummy_data.py"
+
+  # ======================
+  # Observability
+  # ======================
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "19097:9090"
+    volumes:
+      - ../../prometheus:/etc/prometheus:ro
+      - prom_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    networks: { payment-network: {} }
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+    volumes:
+      - ../../grafana/provisioning:/etc/grafana/provisioning
+      - ../../grafana/dashboards:/etc/grafana/dashboards
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+    networks: { payment-network: {} }

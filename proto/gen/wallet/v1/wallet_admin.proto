@@ -1,0 +1,28 @@
+// proto/gen/wallet/v1/wallet_admin.proto
+syntax = "proto3";
+
+package wallet.v1;
+option go_package = "github.com/example/payment-gateway-poc/proto/gen/wallet/v1;walletv1";
+
+service Admin {
+  // Seed daftar akun (idempotent: insert-or-update)
+  rpc SeedAccounts(SeedAccountsRequest) returns (SeedAccountsResponse) {}
+}
+
+message SeedAccountsRequest {
+  repeated AccountSeed accounts = 1;
+}
+
+message SeedAccountsResponse {
+  uint32 upserted = 1;
+}
+
+message AccountSeed {
+  string account_id = 1;
+  string owner      = 2;
+  string currency   = 3; // e.g. USD
+  double balance    = 4; // initial balance
+  // Optional flags
+  double daily_limit = 5;
+  string status      = 6; // ACTIVE/BLOCKED
+}

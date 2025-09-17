@@ -6,24 +6,32 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 
-	m "github.com/example/payment-gateway-poc/pkg/metrics" // <-- sesuaikan dgn module path di go.mod
+	"github.com/example/payment-gateway-poc/services/api-gateway/clients"
+	"github.com/example/payment-gateway-poc/services/api-gateway/handlers"
+	"github.com/example/payment-gateway-poc/services/api-gateway/queue"
+	m "github.com/example/payment-gateway-poc/pkg/metrics"
 )
 
 const serviceName = "api-gateway"
 
 func main() {
-	r := mux.NewRouter()
+	grpcClients, err := clients.NewGRPC()
+	if err != nil {
+		log.Fatalf("init grpc clients: %v", err)
+	}
+	defer grpcClients.Close()
 
-	// Instrument semua request (kecuali /metrics)
+	r := mux.NewRouter()
 	r.Use(metricsMiddleware)
 
-	// 1) metrics & healthz DULU (agar tidak ketimpa static)
+	// metrics & health
 	r.Handle("/metrics", promhttp.Handler()).Methods(http.MethodGet)
 	r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -34,12 +42,27 @@ func main() {
 		})
 	}).Methods(http.MethodGet)
 
-	// 2) static terakhir (catch-all)
+	// API
+	bus := queue.New(
+		strings.Split(getenv("KAFKA_BROKERS", "kafka:9092"), ","),
+		getenv("KAFKA_REQ_TOPIC", "payments.request"),
+		getenv("KAFKA_RES_TOPIC", "payments.result"),
+	)
+	r.HandleFunc("/api/random-accounts", handlers.RandomAccountsHandler(grpcClients.Wallet)).Methods(http.MethodGet)
+	r.HandleFunc("/api/payments", handlers.PaymentsHandler(handlers.Deps{
+		Fx:     grpcClients.Fx,
+		Wallet: grpcClients.Wallet,
+		Risk:   grpcClients.Risk,
+		Bus:    bus,
+	})).Methods(http.MethodPost)
+
+	// static
 	staticDir := "./static"
 	r.PathPrefix("/").Handler(http.FileServer(http.Dir(staticDir)))
 
-	addr := getEnv("HTTP_ADDR", ":8080")
+	addr := getenv("HTTP_ADDR", ":8080")
 	handler := cors.AllowAll().Handler(r)
+
 	log.Printf("%s listening at %s", serviceName, addr)
 	log.Fatal(http.ListenAndServe(addr, handler))
 }
@@ -57,12 +80,10 @@ func (s *statusRecorder) WriteHeader(code int) {
 
 func metricsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Jangan instrument endpoint /metrics itu sendiri
 		if r.URL.Path == "/metrics" {
 			next.ServeHTTP(w, r)
 			return
 		}
-
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
@@ -71,14 +92,12 @@ func metricsMiddleware(next http.Handler) http.Handler {
 		if rec.status >= 200 && rec.status < 400 {
 			statusLabel = "SUCCESS"
 		}
-
 		m.IncRequest(serviceName, statusLabel, r.Method)
 		m.ObserveDuration(serviceName, statusLabel, time.Since(start).Seconds())
 	})
 }
 
-/******************** Utils ********************/
-func getEnv(k, d string) string {
+func getenv(k, d string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
 	}

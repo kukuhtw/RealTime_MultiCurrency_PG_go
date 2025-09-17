@@ -2,45 +2,118 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"log"
-	"math/rand"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	paymentsv1 "github.com/example/payment-gateway-poc/proto/gen/payments/v1"
 )
 
-type PaymentRequest struct {
-	ID                 string  `json:"id"`
-	Currency           string  `json:"currency"`
-	Amount             float64 `json:"amount"`
-	SourceAccount      string  `json:"source_account"`
-	DestinationAccount string  `json:"destination_account"`
+type APIServer struct {
+	paymentsClient paymentsv1.PaymentServiceClient
+	router         *mux.Router
 }
 
-type PaymentResponse struct {
-	ID      string `json:"id"`
-	Status  string `json:"status"`
-	Message string `json:"message"`
+func NewAPIServer() (*APIServer, error) {
+	// Connect to payments gRPC service
+	paymentsConn, err := grpc.Dial(
+		os.Getenv("PAYMENTS_ADDR"),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	paymentsClient := paymentsv1.NewPaymentServiceClient(paymentsConn)
+
+	router := mux.NewRouter()
+	server := &APIServer{
+		paymentsClient: paymentsClient,
+		router:         router,
+	}
+
+	server.setupRoutes()
+	return server, nil
+}
+
+func (s *APIServer) setupRoutes() {
+	// Business routes
+	s.router.HandleFunc("/payments", s.createPaymentHandler).Methods("POST")
+	s.router.HandleFunc("/payments/{id}", s.getPaymentHandler).Methods("GET")
+	
+	// Health check
+	s.router.HandleFunc("/healthz", s.healthHandler).Methods("GET")
+	
+	// Metrics
+	s.router.Handle("/metrics", promhttp.Handler())
+}
+
+func (s *APIServer) createPaymentHandler(w http.ResponseWriter, r *http.Request) {
+	// Implementation for creating payment
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status": "processing", "message": "Payment creation endpoint"}`))
+}
+
+func (s *APIServer) getPaymentHandler(w http.ResponseWriter, r *http.Request) {
+	// Implementation for getting payment status
+	vars := mux.Vars(r)
+	paymentID := vars["id"]
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"id": "` + paymentID + `", "status": "completed"}`))
+}
+
+func (s *APIServer) healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status": "ok", "timestamp": "` + time.Now().Format(time.RFC3339) + `"}`))
+}
+
+func (s *APIServer) Start(addr string) error {
+	log.Printf("API Gateway server starting on %s", addr)
+	
+	server := &http.Server{
+		Addr:         addr,
+		Handler:      s.router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Graceful shutdown
+	go func() {
+		sigint := make(chan os.Signal, 1)
+		signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+		<-sigint
+
+		log.Println("Shutting down server...")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := server.Shutdown(ctx); err != nil {
+			log.Printf("HTTP server Shutdown: %v", err)
+		}
+	}()
+
+	return server.ListenAndServe()
 }
 
 func main() {
-	r := mux.NewRouter()
+	server, err := NewAPIServer()
+	if err != nil {
+		log.Fatalf("Failed to create server: %v", err)
+	}
 
-	// bisnis
-	r.HandleFunc("/payments", paymentsHandler).Methods(http.MethodPost)
-
-	// healthcheck
-	r.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	})
-
-	// expose prometheus
-	r.Handle("/metrics", promhttp.Handler())
-
-	addr := ":8081"
-	log.Printf("Payment Gateway POC listening on %s ...", addr)
-	log.Fatal(http.ListenAndServe(addr,
+	if err := server.Start(":8080"); err != nil {
+		log.Fatalf("Server error: %v", err)
+	}
+}

@@ -1,0 +1,20 @@
+// proto/gen/risk/v1/risk_admin.proto
+syntax = "proto3";
+
+package risk.v1;
+option go_package = "github.com/example/payment-gateway-poc/proto/gen/risk/v1;riskv1";
+
+service Admin {
+  rpc SeedRules(SeedRulesRequest) returns (SeedRulesResponse) {}
+}
+
+message SeedRulesRequest {
+  uint32 max_amount        = 1; // in minor or major units (ikut sistemmu)
+  uint32 velocity_per_min  = 2;
+  repeated string blocked_accounts  = 3;
+  repeated string blocked_countries = 4;
+}
+
+message SeedRulesResponse {
+  bool ok = 1;
+}

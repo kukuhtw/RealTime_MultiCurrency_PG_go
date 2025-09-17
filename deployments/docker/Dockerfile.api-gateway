@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1.6
+FROM golang:1.22-alpine AS build
+WORKDIR /app
+
+# deps (cache-friendly)
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+
+# source
+COPY . .
+
+# pastikan go.mod/go.sum sinkron dgn import terbaru
+RUN --mount=type=cache,target=/go/pkg/mod go mod tidy
+
+# syntax=docker/dockerfile:1.6
+# filename:Dockerfile.api-gateway
+
+# build api-gateway
+ENV CGO_ENABLED=0
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    sh -lc "cd services/api-gateway && go build -trimpath -ldflags='-s -w' -o /out/app"
+
+# runtime
+FROM alpine:3.20
+WORKDIR /app
+RUN apk add --no-cache ca-certificates tzdata
+COPY --from=build /out/app /app/app
+COPY services/api-gateway/static /app/static
+EXPOSE 8080
+ENTRYPOINT ["/app/app"]

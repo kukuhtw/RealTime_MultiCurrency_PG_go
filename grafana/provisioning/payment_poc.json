@@ -1,0 +1,111 @@
+{
+  "title": "Real-Time Multi-Currency Payment POC",
+  "timezone": "",
+  "schemaVersion": 37,
+  "version": 2,
+  "refresh": "5s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Payments / sec",
+      "targets": [{ "expr": "sum(rate(pgw_payments_total[1m]))" }],
+      "gridPos": {"x":0,"y":0,"w":6,"h":4}
+    },
+    {
+      "type": "stat",
+      "title": "Success (total)",
+      "targets": [{ "expr": "sum(pgw_payments_total{status=\"success\"})" }],
+      "gridPos": {"x":6,"y":0,"w":6,"h":4}
+    },
+    {
+      "type": "stat",
+      "title": "Failed (total)",
+      "targets": [{ "expr": "sum(pgw_payments_total{status=\"failed\"})" }],
+      "gridPos": {"x":12,"y":0,"w":6,"h":4}
+    },
+    {
+      "type": "stat",
+      "title": "Idempotent Replays / sec",
+      "targets": [{ "expr": "sum(rate(pgw_payments_total{status=\"success_replay\"}[1m]))" }],
+      "gridPos": {"x":18,"y":0,"w":6,"h":4}
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Payments by Status (rate)",
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum by (status) (rate(pgw_payments_total[1m]))" }
+      ],
+      "gridPos": {"x":0,"y":4,"w":12,"h":8}
+    },
+    {
+      "type": "timeseries",
+      "title": "Top Fail Reasons (rate)",
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        { "expr": "topk(5, sum by (reason) (rate(pgw_payments_total{status=\"failed\"}[5m])))" }
+      ],
+      "gridPos": {"x":12,"y":4,"w":12,"h":8}
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Latency p50 / p95 / p99 (ms, end-to-end)",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(pgw_request_latency_ms_bucket[5m])) by (le))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(pgw_request_latency_ms_bucket[5m])) by (le))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum(rate(pgw_request_latency_ms_bucket[5m])) by (le))", "legendFormat": "p99" }
+      ],
+      "gridPos": {"x":0,"y":12,"w":12,"h":8}
+    },
+    {
+      "type": "timeseries",
+      "title": "Service Latency p95 by Service (ms)",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(pgw_request_latency_ms_bucket[5m])) by (le,service))" }
+      ],
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "gridPos": {"x":12,"y":12,"w":12,"h":8}
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Service Calls / sec",
+      "targets": [
+        { "expr": "sum(rate(pgw_wallet_calls_total[1m]))", "legendFormat": "wallet" },
+        { "expr": "sum(rate(pgw_fx_calls_total[1m]))", "legendFormat": "fx" },
+        { "expr": "sum(rate(pgw_db_calls_total[1m]))", "legendFormat": "db" },
+        { "expr": "sum(rate(pgw_risk_calls_total[1m]))", "legendFormat": "risk" }
+      ],
+      "gridPos": {"x":0,"y":20,"w":12,"h":8}
+    },
+    {
+      "type": "bargauge",
+      "title": "Kafka Consumer Lag by Group",
+      "targets": [
+        { "expr": "sum(kafka_consumergroup_lag) by (consumergroup)" }
+      ],
+      "gridPos": {"x":12,"y":20,"w":12,"h":8}
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Success vs Replay (rate)",
+      "targets": [
+        { "expr": "sum(rate(pgw_payments_total{status=\"success\"}[1m]))", "legendFormat": "success" },
+        { "expr": "sum(rate(pgw_payments_total{status=\"success_replay\"}[1m]))", "legendFormat": "success_replay" }
+      ],
+      "gridPos": {"x":0,"y":28,"w":12,"h":8}
+    },
+    {
+      "type": "timeseries",
+      "title": "Insufficient Funds vs Fraud (rate)",
+      "targets": [
+        { "expr": "sum(rate(pgw_payments_total{status=\"failed\",reason=\"insufficient_funds\"}[1m]))", "legendFormat": "insufficient_funds" },
+        { "expr": "sum(rate(pgw_payments_total{status=\"failed\",reason=\"fraud\"}[1m]))", "legendFormat": "fraud" }
+      ],
+      "gridPos": {"x":12,"y":28,"w":12,"h":8}
+    }
+  ]
+}

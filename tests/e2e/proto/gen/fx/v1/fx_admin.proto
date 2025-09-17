@@ -1,0 +1,25 @@
+// proto/gen/fx/v1/fx_admin.proto
+
+syntax = "proto3";
+
+package fx.v1;
+option go_package = "github.com/example/payment-gateway-poc/proto/gen/fx/v1;fxv1";
+
+service Admin {
+  rpc SeedRates(SeedRatesRequest) returns (SeedRatesResponse) {}
+}
+
+message SeedRatesRequest {
+  repeated RateSeed rates = 1;
+}
+
+message SeedRatesResponse {
+  uint32 upserted = 1;
+}
+
+message RateSeed {
+  string pair = 1; // "USD/IDR"
+  double mid  = 2;
+  double bid  = 3; // optional; 0 = ignore
+  double ask  = 4; // optional; 0 = ignore
+}

@@ -1,1 +1,22 @@
 cd /home/kukuhtw/go/payment-gateway-poc
+
+
+./clean-start.sh
+
+python3 tools/generate_dummy_data.py
+make dev-grpc
+make seed-grpc       # kalau sempat “refused”, ulang 2–3 detik lagi
+make e2e-grpc-csv
+
+find . -type f -o -type d | sed 's|^\./||' | grep -v "^\.$" | sort
+
+
+wallet-grpc: gRPC 9093, metrics 9103
+
+fx-grpc: gRPC 9102
+
+risk-grpc: gRPC 9094 (sesuaikan servicemu), metrics 9104
+
+db-rs: gRPC 9095, metrics 9105
+
+payments-rs: gRPC 9096, metrics 9106

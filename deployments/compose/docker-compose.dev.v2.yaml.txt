@@ -1,0 +1,107 @@
+naame: compose
+
+x-go-build: &go_build
+  context: ../../
+  dockerfile: deployments/docker/Dockerfile
+
+networks:
+  payment-network:
+    name: payment-network
+
+volumes:
+  prom_data: {}
+  grafana-data: {}
+
+services:
+  # ======================
+  # Core gRPC services
+  # ======================
+  api-gateway:
+    build:
+      <<: *go_build
+      args: { SERVICE: services/api-gateway }
+    image: compose-api-gateway
+    ports:
+      - "19090:9090"   # expose gRPC jika gateway juga expose di 9090
+      - "18080:8080"   # http ui/health jika ada
+    environment:
+      WALLET_ADDR: wallet-grpc:9103
+      PAYMENTS_ADDR: payments-grpc:9101
+      RISK_ADDR: risk-grpc:9104
+      FX_ADDR: fx-grpc:9102
+    depends_on:
+      - wallet-grpc
+      - payments-grpc
+      - risk-grpc
+      - fx-grpc
+    networks: { payment-network: {} }
+
+  wallet-grpc:
+    build:
+      <<: *go_build
+      args: { SERVICE: services/wallet }
+    image: compose-wallet-grpc
+    ports:
+      - "19093:9093"   # gRPC (optional publish)
+      - "19103:9103"   # /metrics (host)
+    networks: { payment-network: {} }
+
+  payments-grpc:
+    build:
+      <<: *go_build
+      args: { SERVICE: services/payments-grpc }
+    image: compose-payments-grpc
+    ports:
+      - "19091:9091"
+      - "19101:9101"
+    networks: { payment-network: {} }
+
+  risk-grpc:
+    build:
+      <<: *go_build
+      args: { SERVICE: services/risk-grpc }
+    image: compose-risk-grpc
+    ports:
+      - "19094:9094"
+      - "19104:9104"
+    networks: { payment-network: {} }
+
+  fx-grpc:
+    build:
+      <<: *go_build
+      args: { SERVICE: services/fx-grpc }
+    image: compose-fx-grpc
+    ports:
+      - "19092:9092"
+      - "19102:9102"
+    networks: { payment-network: {} }
+
+  # ======================
+  # Observability
+  # ======================
+  prometheus:
+    image: prom/prometheus:latest
+    ports: ["19095:9090"]                # Prometheus UI on host
+    volumes:
+      - ../../prometheus:/etc/prometheus:ro   # pakai folder prometheus di root repo
+      - prom_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    networks: { payment-network: {} }
+
+  grafana:
+    image: grafana/grafana:latest
+    ports: ["3000:3000"]                 # Grafana UI on host
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"  # auto-login
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+    volumes:
+      - ../../grafana/provisioning:/etc/grafana/provisioning
+      - ../../grafana/dashboards:/etc/grafana/dashboards
+      - grafana-data:/var/lib/grafana
+    depends_on: [prometheus]
+    networks: { payment-network: {} }

@@ -1,32 +1,29 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
 scrape_configs:
+  - job_name: 'kafka-exporter'
+    static_configs:
+      - targets: ['kafka-exporter:9308']
+      
   - job_name: 'api-gateway'
-    static_configs: [{ targets: ['api-gateway:8080'] }]
-
-  - job_name: 'payments'
-    static_configs: [{ targets: ['payments:8081'] }]
-
-  - job_name: 'fx'
-    static_configs: [{ targets: ['fx:8082'] }]
+    static_configs: [{ targets: ['api-gateway:9180'] }]
 
   - job_name: 'wallet'
-    static_configs: [{ targets: ['wallet:8083'] }]
+    static_configs: [{ targets: ['wallet-grpc:9103'] }]
+
+  - job_name: 'fx'
+    static_configs: [{ targets: ['fx-grpc:9102'] }]
 
   - job_name: 'risk'
-    static_configs: [{ targets: ['risk:8084'] }]
+    static_configs: [{ targets: ['risk-grpc:9104'] }]
 
-  # gRPC services
-  - job_name: 'wallet-grpc'
-    static_configs:
-      - targets: ['wallet-grpc:9103']
+  - job_name: 'db-rs'
+    static_configs: [{ targets: ['db-rs:9105'] }]
 
-  - job_name: 'fx-grpc'
-    static_configs:
-      - targets: ['fx-grpc:9102']
+  - job_name: 'payments-rs'
+    static_configs: [{ targets: ['payments-rs:9106'] }]
 
-  - job_name: 'risk-grpc'
-    static_configs:
-      - targets: ['risk-grpc:9104']
-
-  - job_name: 'payments-grpc'
-    static_configs:
-      - targets: ['payments-grpc:9101']
+  - job_name: 'kafka-exporter'
+    static_configs: [{ targets: ['kafka-exporter:9308'] }]

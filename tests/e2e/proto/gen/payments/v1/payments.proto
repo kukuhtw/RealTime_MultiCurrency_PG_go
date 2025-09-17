@@ -1,0 +1,21 @@
+syntax = "proto3";
+package payments.v1;
+option go_package = "github.com/example/payment-gateway-poc/proto/gen/payments/v1;paymentsv1";
+
+import "proto/gen/common/v1/common.proto";
+
+message CreatePaymentRequest {
+  string id = 1;  // Add this field
+  int64 amount_minor = 2;
+  common.v1.Currency currency = 3;
+  string user_id = 4;
+  string destination_account = 5;  // Add this field
+}
+
+message CreatePaymentResponse {
+  string payment_id = 1;
+}
+
+service PaymentsService {
+  rpc CreatePayment (CreatePaymentRequest) returns (CreatePaymentResponse);
+}

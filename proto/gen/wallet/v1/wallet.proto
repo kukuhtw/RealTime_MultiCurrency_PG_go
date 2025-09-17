@@ -1,0 +1,55 @@
+// proto/gen/payments/v1/wallet.proto
+
+syntax = "proto3";
+
+package wallet.v1;
+option go_package = "github.com/example/payment-gateway-poc/proto/gen/wallet/v1;walletv1";
+
+import "proto/gen/common/v1/common.proto";
+
+// ===== RPC untuk kebutuhan UI/demo =====
+message GetRandomAccountsRequest {
+  uint32 count = 1; // default 2 (sender, receiver) – jika 0, server treat as 2
+}
+message GetRandomAccountsResponse {
+  repeated string account_ids = 1;
+}
+
+// ===== RPC operasional wallet =====
+message GetBalanceRequest {
+  string account_id = 1;
+}
+message GetBalanceResponse {
+  int64 balance_minor = 1;                // saldo dalam minor units (IDR = rupiah)
+  common.v1.Currency currency = 2;        // biasanya CURRENCY_IDR
+}
+
+message ReserveRequest {
+  string payment_id   = 1;                // id pembayaran dari payment service
+  string account_id   = 2;                // sumber dana
+  int64  amount_minor = 3;                // rupiah (minor units)
+  common.v1.Currency currency = 4;        // biasanya CURRENCY_IDR
+}
+message ReserveResponse {
+  bool   ok             = 1;
+  string reservation_id = 2;
+  string reason         = 3;              // jika ok=false
+}
+
+message CaptureRequest {
+  string reservation_id = 1;
+}
+message CaptureResponse {
+  bool   ok     = 1;
+  string reason = 2;                      // jika ok=false
+}
+
+service WalletService {
+  // UI helper
+  rpc GetRandomAccounts(GetRandomAccountsRequest) returns (GetRandomAccountsResponse);
+
+  // Operasional
+  rpc GetBalance (GetBalanceRequest) returns (GetBalanceResponse);
+  rpc Reserve    (ReserveRequest)    returns (ReserveResponse);
+  rpc Capture    (CaptureRequest)    returns (CaptureResponse);
+}

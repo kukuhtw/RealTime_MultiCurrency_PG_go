@@ -1,0 +1,8 @@
+{
+  "max_amount": 100000,
+  "velocity_per_min": 200,
+  "blocked_accounts": [
+    "ACC_000999"
+  ],
+  "blocked_countries": []
+}
