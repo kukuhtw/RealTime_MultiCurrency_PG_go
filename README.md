@@ -1,346 +1,318 @@
-# Payment Gateway POC (Go, gRPC, Docker Compose)
 
-Monorepo **payment-gateway-poc** berisi beberapa layanan Go (HTTP & gRPC) yang disusun untuk percobaan arsitektur payment gateway: **api-gateway**, **payments**, **fx**, **wallet**, **risk**, beserta observability (**Prometheus** & **Grafana**).
 
-> Bahasa: Indonesia · Toolchain: Go 1.22 (default), bisa upgrade ke 1.23 jika mau.
+# Real-Time Multi-Currency Payment Gateway (PoC)
 
----
+Monorepo **Proof of Concept** untuk *real-time multi-currency payment gateway* berbasis **microservices + gRPC + Kafka** dengan orkestrasi di **API Gateway**, *observability* (Prometheus + Grafana), dan tooling untuk dummy data & testing.
 
-## 1) Ringkasan
-
-* **api-gateway** – HTTP entrypoint (port `8080`) yang memanggil layanan-layanan di belakangnya.
-* **services/** – layanan HTTP kecil per domain (`payments`, `fx`, `wallet`, `risk`).
-* **cmd/\*-grpc** – server gRPC per domain (port `9091..9094`), dengan metrik Prometheus (port `9101..9104`).
-* **proto/gen/** – paket kode hasil generate dari file `.proto` (import path: `github.com/example/payment-gateway-poc/proto/gen/...`).
-* **Observability** – Prometheus (port `9090`) + Grafana (port `3000`) dengan provisioning dashboard.
-
-> **Catatan penting**: Kita **tidak** lagi tergantung repo eksternal `github.com/kukuhtw/RealTime_MultiCurrency_PG_go`. Semua import diarahkan ke path modul **lokal** `github.com/example/payment-gateway-poc/...`. Pastikan file hasil generate (`*.pb.go`) **ada** di `proto/gen/**`.
+> ⚠️ PoC untuk edukasi/demonstrasi. Belum siap produksi (auth/HA/hardening/db migration penuh, dsb).
 
 ---
 
-## 2) Struktur Repo (ringkas)
+## Arsitektur Ringkas
+
+* **api-gateway** (HTTP): Validasi request + orchestrator:
+
+  1. panggil **fx-grpc** (konversi USD/SGD → IDR),
+  2. cek saldo **wallet-grpc** (fail-fast jika kurang),
+  3. cek **risk-grpc** (fail-fast jika deny),
+  4. publish ke **Kafka** `payments.request` dan tunggu hasil di `payments.result`.
+* **payments-worker** (consumer): ambil pesan Kafka → panggil **payments-rs** (`LogAndSettle`).
+* **payments-rs**: bisnis proses pembayaran → panggil **db-rs** untuk **Reserve → Commit / Rollback**.
+* **db-rs**: koneksi Postgres; transaksi atomik (lock, update saldo, `reservations`, `payments`).
+* **Observability**: **Prometheus** (scrape) + **Grafana** (dashboard).
+* **Kafka UI**: memantau topik/partisi traffic.
+
+### Sequence (Mermaid)
+
+```mermaid
+sequenceDiagram
+    title Payment Orchestration (Gateway + Kafka + Worker + DB)
+
+    actor Client
+    participant GW as API Gateway (HTTP)
+    participant FX as fx-grpc
+    participant WAL as wallet-grpc
+    participant RISK as risk-grpc
+    participant KREQ as Kafka payments.request
+    participant KRES as Kafka payments.result
+    participant WORK as payments-worker
+    participant PAY as payments-rs (LogAndSettle)
+    participant DB as db-rs (Reserve/Commit/Rollback)
+    database PG as Postgres
+
+    Client->>GW: POST /api/payments {sender, receiver, currency, amount, idempo}
+
+    rect rgba(200,200,255,0.15)
+      alt currency != IDR
+        GW->>FX: Convert(USD/SGD → IDR)
+        FX-->>GW: amount_idr
+      else currency == IDR
+        Note right of GW: amount_idr = amount
+      end
+      alt FX error
+        GW-->>Client: {status:FAILED, reason:"fx_unavailable"}
+        return
+      end
+    end
+
+    rect rgba(200,255,200,0.15)
+      GW->>WAL: GetAccount(sender_id)
+      WAL-->>GW: balance_idr
+      alt balance < amount_idr
+        GW-->>Client: {status:FAILED, reason:"insufficient_funds"}
+        return
+      end
+    end
+
+    rect rgba(255,220,200,0.15)
+      GW->>RISK: Evaluate(sender, receiver, amount_idr, currency, tx_date)
+      RISK-->>GW: {allow:true|false, reason}
+      alt allow == false
+        GW-->>Client: {status:FAILED, reason:"risk_<reason>"}
+        return
+      end
+    end
+
+    rect rgba(235,235,235,0.5)
+      GW->>KREQ: key=idempo\nvalue={sender,receiver,amount_idr,...}
+      Note over GW: Wait result (≤5s)
+      KREQ-->>WORK: consume
+      WORK->>PAY: LogAndSettle(request)
+      activate PAY
+
+      %% Reserve
+      PAY->>DB: ReserveFunds(idempo, sender, receiver, amount_idr, currency)
+      DB->>PG: BEGIN; lock sender; check; deduct; insert reservation(PENDING); COMMIT
+      DB-->>PAY: {status:OK|INSUFFICIENT|DUPLICATE, reservation_id?}
+
+      alt INSUFFICIENT
+        PAY-->>WORK: FAILED(insufficient_funds)
+      else DUPLICATE
+        PAY-->>WORK: SUCCESS_REPLAY(duplicate_idempo)
+      else OK
+        %% Commit
+        PAY->>DB: CommitReservation(reservation_id, idempo)
+        DB->>PG: lock reservation; credit receiver;\nreservation→COMMITTED; payments(SUCCESS); COMMIT
+        DB-->>PAY: {status:OK|NOT_FOUND|BAD_STATUS}
+
+        alt OK
+          PAY-->>WORK: SUCCESS(committed, ref=reservation_id)
+        else NOT_FOUND or BAD_STATUS
+          %% Rollback safety
+          PAY->>DB: RollbackReservation(reservation_id, "commit_failed")
+          DB->>PG: credit back sender;\nreservation→ROLLEDBACK; payments(FAILED); COMMIT
+          PAY-->>WORK: FAILED(commit_failed)
+        end
+      end
+      deactivate PAY
+
+      WORK->>KRES: key=idempo\nvalue={status, reason, ref?}
+      KRES-->>GW: result match by idempo
+
+      alt timeout / no result
+        GW-->>Client: {status:FAILED, reason:"queue_timeout"}
+      else got result
+        GW-->>Client: {status, reason, ref?}
+      end
+    end
+
+    Note over DB,PG: Idempotency:\n- reservations.idempotency_key (reserve)\n- payments.idempotency_key (commit replay)
+```
+
+---
+
+## Struktur Repo (bagian relevan)
 
 ```
-.
-├── cmd/
-│   ├── payments-grpc/
-│   ├── fx-grpc/
-│   ├── wallet-grpc/
-│   └── risk-grpc/
-├── services/
-│   ├── api-gateway/
-│   ├── payments/
-│   ├── fx/
-│   ├── wallet/
-│   └── risk/
-├── proto/
-│   └── gen/
-│       ├── common/v1/*.proto + *.pb.go
-│       ├── fx/v1/*.proto + *.pb.go
-│       ├── wallet/v1/*.proto + *.pb.go
-│       ├── risk/v1/*.proto + *.pb.go
-│       └── payments/v1/*.proto + *.pb.go
-├── deployments/
-│   ├── compose/docker-compose.dev.yaml
-│   └── docker/Dockerfile
-├── grafana/
-│   ├── grafana_payment_gateway_dashboard.json
-│   └── provisioning/**
-├── prometheus/prometheus.yml
-└── go.mod, go.sum, Makefile, README.md
+services/
+├─ api-gateway/
+│  ├─ handlers/
+│  │  ├─ payments.go        # FX → Wallet → Risk → Kafka publish/wait
+│  │  └─ types.go           # JSON request/response
+│  ├─ queue/kafka.go        # Publish()/WaitResult()
+│  ├─ client/grpc_clients.go# init Fx/Wallet/Risk/Payments clients
+│  └─ static/index.html     # UI PoC (form + iframe Grafana)
+├─ payments-worker/
+│  └─ main.go               # Consume Kafka → call payments-rs → publish result
+├─ payments-rs/
+│  └─ src/main.rs           # LogAndSettle → call db-rs (Reserve/Commit/Rollback)
+├─ db-rs/
+│  └─ src/
+│     ├─ handlers.rs        # gRPC handlers (Reserve/Commit/Rollback)
+│     ├─ store.rs           # SQL logic (FOR UPDATE, insert/update)
+│     └─ schema.sql         # DDL: reservations, payments, (wallet_accounts)
+├─ fx-grpc/ (cmd/fx-grpc)   # FX convert gRPC
+├─ wallet (cmd/wallet-grpc) # Wallet gRPC (GetAccount, dst)
+└─ risk-grpc/
+   ├─ main.go               # gRPC server
+   └─ service.go            # Rules: <1000 or >10_000_000 reject; 2% random reject
 ```
 
----
-
-## 3) Prasyarat
-
-* **Docker** & **Docker Compose** terinstal.
-* Tidak perlu Go di host (semua build & tooling berjalan di container).
-
-(Optional) Jika ingin generate protobuf di host, butuh `protoc` dan plugin `protoc-gen-go` & `protoc-gen-go-grpc`.
+Kontrak proto tersedia di `proto/gen/{fx,wallet,risk,payments,db}/v1`.
 
 ---
 
-## 4) Quick Start
+## Quick Start (Dev – Docker Compose)
+
+Jalankan seluruh stack (v2):
 
 ```bash
-# dari root repo
-make dev
-# atau setara dengan:
-docker compose -f deployments/compose/docker-compose.dev.yaml up -d --build
+docker compose -f deployments/compose/docker-compose.dev.v2.yaml up -d --build
 ```
 
-Lalu akses:
+**Akses:**
 
-* API Gateway: [http://localhost:8080](http://localhost:8080)
-* Prometheus:  [http://localhost:9090](http://localhost:9090)
-* Grafana:     [http://localhost:3000](http://localhost:3000)  (user: admin / pass: admin)
+| Komponen    | URL (host)                                       | Catatan                                      |
+| ----------- | ------------------------------------------------ | -------------------------------------------- |
+| API Gateway | [http://localhost:18080](http://localhost:18080) | UI PoC + `/metrics`                          |
+| Grafana     | [http://localhost:3000](http://localhost:3000)   | Dashboard & Explore                          |
+| Prometheus  | [http://localhost:19097](http://localhost:19097) | Scrape status/queries                        |
+| Kafka UI    | [http://localhost:9081](http://localhost:9081)   | Lihat `payments.request` & `payments.result` |
 
-> **Jika build gagal** lihat bagian **Troubleshooting** di bawah.
+> gRPC port lain ikut dipublish (mis. `payments-rs` di `19096`), tapi tidak perlu diakses langsung untuk alur normal.
 
----
-
-## 5) Layanan & Port
-
-**HTTP services**
-
-* api-gateway → `8080:8080`
-* payments → `8081:8081`
-* fx → `8082:8082`
-* wallet → `8083:8083`
-* risk → `8084:8084`
-
-**gRPC services**
-
-* payments-grpc → `9091` (metrics `9101`)
-* fx-grpc → `9092` (metrics `9102`)
-* wallet-grpc → `9093` (metrics `9103`)
-* risk-grpc → `9094` (metrics `9104`)
-
-> Ketika semua container jalan di Compose, **jangan** dial ke `localhost`. Gunakan **nama service** Compose, mis.: `risk-grpc:9094`, `wallet-grpc:9093`, `fx-grpc:9092` dari service **payments**.
-
----
-
-## 6) Docker Compose (dev)
-
-File: `deployments/compose/docker-compose.dev.yaml`
-
-* Setiap service build memakai **ARG `SERVICE`** untuk memilih target direktori build.
-
-  * Contoh: `services/api-gateway` (HTTP) atau `cmd/payments-grpc` (gRPC).
-* `depends_on` sudah diset seperlunya.
-* api-gateway me-mount static assets (read-only) dari `services/api-gateway/static`.
-* Prometheus & Grafana diprovision dengan file di repo.
-
-Jalankan:
+Hentikan:
 
 ```bash
-docker compose -f deployments/compose/docker-compose.dev.yaml up -d --build
-# stop & hapus kontainer:
-docker compose -f deployments/compose/docker-compose.dev.yaml down
+docker compose -f deployments/compose/docker-compose.dev.v2.yaml down -v
 ```
 
 ---
 
-## 7) Dockerfile (multi-stage)
+## Smoke Test
 
-File: `deployments/docker/Dockerfile`
-
-Pola umum:
-
-```dockerfile
-# syntax=docker/dockerfile:1.6
-FROM golang:1.22-alpine AS build
-WORKDIR /app
-
-# cache modul
-COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download
-
-# source
-COPY . .
-
-# (opsional tapi dianjurkan)
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod tidy && go mod download && go mod verify
-
-ARG SERVICE=services/api-gateway
-ENV CGO_ENABLED=0
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    sh -c "cd ${SERVICE} && go build -trimpath -ldflags='-s -w' -o /out/app"
-
-FROM alpine:3.20
-WORKDIR /app
-COPY --from=build /out/app /app/app
-# aman untuk service lain kalau folder ada; hapus jika tidak perlu
-COPY services/api-gateway/static /app/static
-EXPOSE 8080
-ENTRYPOINT ["/app/app"]
-```
-
-**Tips penting**:
-
-* Pakai `sh -c` (bukan `sh -lc`) → mencegah PATH environment "hilang" saat build.
-* Jangan `rm -f go.sum && go mod tidy` sembarangan di Dockerfile; cukup `go mod tidy`.
-* Pastikan `.dockerignore` **tidak** meng-ignore `proto/**` atau `*.pb.go`.
-
----
-
-## 8) Protobuf & gRPC
-
-Semua import code gRPC diarahkan ke path **lokal**:
-
-```
-github.com/example/payment-gateway-poc/proto/gen/<svc>/v1
-```
-
-### 8.1 Sumber schema
-
-* Letakkan file `.proto` di struktur berikut:
-
-```
-proto/gen/common/v1/*.proto
-proto/gen/fx/v1/*.proto
-proto/gen/wallet/v1/*.proto
-proto/gen/risk/v1/*.proto
-proto/gen/payments/v1/*.proto
-```
-
-* Set **go\_package** di setiap `.proto` agar sesuai modul:
-
-```proto
-option go_package = "github.com/example/payment-gateway-poc/proto/gen/<svc>/v1;<pkgname>";
-```
-
-Contoh: `<svc>=payments`, `<pkgname>=paymentsv1`.
-
-### 8.2 Generate `*.pb.go`
-
-> **Pilih salah satu opsi** sesuai versi Go base image.
-
-**Opsi A – Go 1.22 (pin versi plugin)**
+Kirim 1 transaksi (USD 10 → otomatis dikonversi ke IDR oleh FX):
 
 ```bash
-docker run --rm -v "$PWD":/work -w /work golang:1.22-alpine sh -c '
-  set -e
-  apk add --no-cache protobuf git
-  go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.32.0
-  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
-  export PATH="$PATH:/go/bin"
-
-  PROTO_COUNT=$(find proto/gen -name "*.proto" | wc -l || true)
-  if [ "$PROTO_COUNT" = "0" ]; then
-    echo "ERROR: tidak ada file .proto di proto/gen/**"; exit 1; fi
-
-  protoc -I . \
-    --go_out=. --go_opt=paths=source_relative \
-    --go-grpc_out=. --go-grpc_opt=paths=source_relative \
-    $(find proto/gen -name "*.proto" | sort)
-'
+curl -s -XPOST http://localhost:18080/api/payments \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "sender_id":"ACC001",
+    "receiver_id":"ACC002",
+    "currency":"USD",
+    "amount":10,
+    "tx_date":"2025-09-17T03:00:00Z",
+    "idempotency_key":"test-001"
+  }' | jq
 ```
 
-**Opsi B – Go 1.23 (boleh `@latest`)**
+Hasil tipikal:
 
-1. Ubah semua `golang:1.22-alpine` → `golang:1.23-alpine` (Dockerfile & perintah tooling).
-2. Lalu generate:
-
-```bash
-docker run --rm -v "$PWD":/work -w /work golang:1.23-alpine sh -c '
-  set -e
-  apk add --no-cache protobuf git
-  go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-  export PATH="$PATH:/go/bin"
-  protoc -I . \
-    --go_out=. --go_opt=paths=source_relative \
-    --go-grpc_out=. --go-grpc_opt=paths=source_relative \
-    $(find proto/gen -name "*.proto" | sort)
-'
+```json
+{ "status":"SUCCESS", "reason":"committed", "ref":"<reservation_uuid>" }
 ```
 
-**Verifikasi**
+Atau:
 
-```bash
-find proto -maxdepth 4 -type f -name '*pb.go' | sort
-```
+* `FAILED / insufficient_funds` (saldo kurang),
+* `FAILED / risk_<reason>` (ditolak risk),
+* `SUCCESS_REPLAY` (idempotency key sama),
+* `FAILED / queue_timeout` (worker lambat/tidak jalan).
 
----
-
-## 9) Manajemen Dependensi Go (go.mod / go.sum)
-
-Semua perintah dilakukan **di dalam container**:
-
-```bash
-docker run --rm -v "$PWD":/work -w /work golang:1.22-alpine \
-  sh -c 'apk add --no-cache git && go mod tidy && go mod download && go mod verify'
-```
-
-> Penting: `git` wajib ada supaya `go mod` dapat mengambil modul.
-
-Jika muncul error **missing go.sum entry** (xxhash, protobuf, x/sys, dst), jalankan lagi perintah di atas setelah memastikan internet OK.
+Buka **Kafka UI** ([http://localhost:9081](http://localhost:9081)) untuk melihat pesan di topic `payments.request` dan `payments.result`.
 
 ---
 
-## 10) Observability
+## Detail Proses (5 Tahap)
 
-* **Prometheus** (port `9090`) pakai konfigurasi dari `prometheus/prometheus.yml`.
-* **Grafana** (port `3000`) sudah diprovision:
+1. **FX Convert**
+   Gateway panggil **fx-grpc** jika `currency ∈ {USD, SGD}` → dapat `amount_idr`.
 
-  * Credentials default: `admin` / `admin`.
-  * Dashboard JSON dimount ke `/var/lib/grafana/dashboards/payment.json`.
-  * Seluruh provisioning dimount dari `grafana/provisioning/`.
+2. **Wallet Check**
+   Gateway panggil **wallet-grpc\:GetAccount(sender\_id)** → jika `balance_idr < amount_idr` → **FAILED/insufficient\_funds** (fail-fast).
 
----
+3. **Risk Check**
+   Gateway panggil **risk-grpc\:Evaluate** → jika `Allow=false` → **FAILED/risk\_<reason>** (fail-fast).
+   *Rule default PoC*: `< 1,000` atau `> 10,000,000` ditolak; selain itu 2% acak ditolak.
 
-## 11) Troubleshooting (umum)
+4. **Publish & Wait (Kafka)**
+   Gateway publish ke **`payments.request`** (key = `idempotency_key`) dan **menunggu ≤5s** di **`payments.result`**.
+   Worker konsumsi request → panggil **payments-rs.LogAndSettle**.
 
-### a) `yaml: line XX: did not find expected key`
+5. **Process Payment di Backend**
+   **payments-rs** → **db-rs**:
 
-* Periksa indentasi di `docker-compose.dev.yaml` (spasi, bukan tab). Pastikan setiap service sejajar.
+   * **Reserve**: lock sender, cek saldo lagi (defense-in-depth), **deduct**, insert `reservations(PENDING)`.
+     Jika **duplicate** idempo → **SUCCESS\_REPLAY**. Jika kurang → **FAILED/insufficient\_funds**.
+   * **Commit**: lock reservation, **credit receiver**, `reservations→COMMITTED`, insert `payments(SUCCESS)`.
+     Jika commit gagal → **Rollback**: credit balik sender, `reservations→ROLLEDBACK`, `payments(FAILED)`.
 
-### b) `sh: go: not found`
+**Tabel**:
 
-* Terjadi jika step build dijalankan pada **runtime image** (alpine) bukan pada **build image** (`golang:*`). Pastikan compile terjadi di stage `FROM golang:... AS build`.
-* Gunakan `sh -c` (bukan `-lc`).
-
-### c) `no required module provides package github.com/example/payment-gateway-poc/proto/gen/...`
-
-* Artinya `*.pb.go` **belum ada** → generate dari `.proto` (lihat bagian **8.2**), atau **copy** dari repo lama.
-* Jika file `.proto` juga belum ada, copy dulu schema-nya ke `proto/gen/**`.
-
-### d) `missing go.sum entry for module ...`
-
-* Jalankan `go mod tidy && go mod download && go mod verify` di container (butuh `apk add git`).
-
-### e) `fatal: could not read Username for 'https://github.com'`
-
-* Go mencoba fetch modul `github.com/example/payment-gateway-poc/proto/gen/...` dari GitHub karena paket lokal tidak ditemukan.
-* Solusi: pastikan folder `proto/gen/**` berisi `*.pb.go` (atau `.proto` + generate). Setelah itu `go mod tidy` lagi.
-
-### f) `.dockerignore` menghapus file yang dibutuhkan
-
-* Pastikan **tidak** ada pola yang mengabaikan `proto/**` atau `*.pb.go`.
+* `wallet_accounts(account_id, balance_idr, updated_at)`
+* `reservations(reservation_id, idempotency_key, sender_id, receiver_id, amount_idr, currency_input, status)`
+* `payments(payment_id, idempotency_key, sender_id, receiver_id, currency_input, amount_idr, status)`
 
 ---
 
-## 12) Perintah Berguna
+## Endpoints (Dev)
 
-```bash
-# rebuild total tanpa cache
-docker compose -f deployments/compose/docker-compose.dev.yaml build --no-cache
+| Service     | Host Port | Path                   | Catatan                              |
+| ----------- | --------- | ---------------------- | ------------------------------------ |
+| api-gateway | 18080     | `/api/payments` (POST) | JSON in/out                          |
+|             |           | `/api/random-accounts` | Dummy helper                         |
+|             |           | `/metrics`, `/healthz` | Prometheus/health                    |
+| fx-grpc     | 19102     | gRPC                   | Dipanggil oleh gateway               |
+| wallet-grpc | 19093     | gRPC                   | Dipanggil oleh gateway (GetAccount)  |
+| risk-grpc   | 19094     | gRPC                   | Dipanggil oleh gateway (Evaluate)    |
+| payments-rs | 19096     | gRPC                   | Dipanggil oleh worker (LogAndSettle) |
+| db-rs       | 19095     | gRPC                   | Dipanggil oleh payments-rs           |
+| Prometheus  | 19097     | Web UI                 | Scrape metrics dari semua service    |
+| Grafana     | 3000      | Web UI                 | Dashboard (provisioned)              |
+| Kafka UI    | 9081      | Web UI                 | Observasi topik Kafka                |
 
-# lihat log salah satu service
-docker compose -f deployments/compose/docker-compose.dev.yaml logs -f payments
-
-# cek daftar file pb.go
-find proto -maxdepth 4 -type f -name '*pb.go' | sort
-
-# hapus kontainer + network (tidak menghapus volume)
-docker compose -f deployments/compose/docker-compose.dev.yaml down
-```
-
----
-
-## 13) FAQ
-
-**Q: Kenapa tidak pakai repo `RealTime_MultiCurrency_PG_go`?**
-A: Untuk menghindari dependency eksternal & masalah versi, semua import diarahkan ke paket **lokal** `github.com/example/payment-gateway-poc/proto/gen/...`. Artinya schema & hasil generate berada di repo ini sendiri.
-
-**Q: Harus upgrade ke Go 1.23?**
-A: Tidak wajib. Jika tetap di Go 1.22, **pin** plugin `protoc-gen-go` ke `v1.32.0` dan `protoc-gen-go-grpc` ke `v1.3.0` (lihat bagian **8.2 Opsi A**). Jika upgrade ke Go 1.23, kamu bisa gunakan `@latest`.
+> Port dapat berbeda jika kamu mengubah `docker-compose.dev.v2.yaml`.
 
 ---
 
-## 14) Lisensi
+## Konfigurasi & ENV Penting
 
-Apache-2.0
+* **api-gateway**:
+  `FX_ADDR`, `WALLET_ADDR`, `RISK_ADDR`, `PAYMENTS_ADDR`, `KAFKA_BROKERS`, `KAFKA_REQ_TOPIC`, `KAFKA_RES_TOPIC`
+* **payments-worker**:
+  `KAFKA_BROKERS`, `KAFKA_REQ_TOPIC`, `KAFKA_RES_TOPIC`, `PAYMENTS_ADDR`
+* **payments-rs**:
+  `DB_ADDR` (alamat gRPC db-rs)
+* **db-rs**:
+  `DATABASE_URL` (Postgres)
+* **risk-grpc** (opsional):
+  rules via ENV jika ditambahkan (PoC default hard-coded)
+
+Semua sudah di-wire di `deployments/compose/docker-compose.dev.v2.yaml`.
 
 ---
 
-### Catatan Akhir
+## Observability
 
-* Pastikan import path di kode konsisten dengan `module` di `go.mod`: `module github.com/example/payment-gateway-poc`.
-* Selalu verifikasi `proto/gen/**` berisi `*.pb.go` sebelum build.
-* Jika menambah service baru, cukup tambahkan target di Compose dengan `args.SERVICE` menunjuk ke direktori yang benar (HTTP: `services/<svc>`, gRPC: `cmd/<svc>-grpc`).
+* **Prometheus**: `Status → Targets` harus `UP`.
+* **Grafana**: dashboards auto-provisioned (lihat folder `grafana/`).
+* **Metrics contoh**:
+
+  * Gateway: `pgw_fx_calls_total`, `pgw_wallet_check_total`, `pgw_risk_total`, `pgw_kafka_publish_total`, `pgw_kafka_wait_result_total`, latensi per tahap.
+  * Worker/Payments/DB: jumlah reserve/commit/rollback, latensi RPC, hasil sukses/gagal.
+
+---
+
+## Testing & Data Dummy
+
+* Dummy wallets / rates / rules di `seeds/`.
+* Integration test contoh di `tests/`.
+* Tools generator dummy di `tools/`.
+
+---
+
+## Troubleshooting
+
+* **`queue_timeout`**: worker tidak consume / lambat. Cek `payments-worker` + `payments-rs` logs; pastikan `payments.result` punya message untuk key yang sama.
+* **FX atau Risk unavailable**: pastikan servisnya `UP`.
+* **Saldo kurang**: wajar—coba ganti akun (`/api/random-accounts` di UI) atau turunkan nominal.
+* **Idempotency**: gunakan `idempotency_key` sama → harus dapat `SUCCESS_REPLAY`.
+
+---
+
+## Lisensi
+
+MIT
+
+---
+
