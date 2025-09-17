@@ -51,62 +51,17 @@ Tujuan: memberikan **arsitektur modular, scalable, resilient** yang dapat dijadi
 
 ## 🏗️ Arsitektur
 
-```mermaid
-flowchart LR
-  C1[Client (Web/Mobile)]:::client
-  G[API Gateway (Go)\nHTTP + gRPC]:::gw
+flowchart LR;
 
-  subgraph GO[Go Services]
-    W[Wallet Svc]:::svc
-    FX[FX Svc]:::svc
-    R[Risk Svc]:::svc
-    P[Payments Orchestrator]:::svc
-  end
+%% Clients
+C1[Web / Mobile Client]:::client
+G[API Gateway (Go)\nHTTP + gRPC]:::gw
 
-  subgraph RUST[Rust Services]
-    DB[[DB Svc (sqlx/Postgres)]]:::rust
-    PW[Payments Worker (Kafka Consumer)]:::rust
-  end
-
-  subgraph INFRA[Infra]
-    PG[(Postgres)]:::db
-    KF[(Kafka)]:::queue
-    PRM[(Prometheus)]:::obs
-    GRA[(Grafana)]:::obs
-  end
-
-  C1 --> G
-  G --> P
-  G --> W
-  G --> FX
-  G --> R
-  P --> R
-  P --> FX
-  P --> W
-  P --> DB
-  W --> DB
-  P -->|Produce| KF
-  PW -->|Consume| KF
-  PW --> DB
-  PW --> W
-  DB --- PG
-  G --> PRM
-  W --> PRM
-  FX --> PRM
-  R --> PRM
-  P --> PRM
-  PW --> PRM
-  DB --> PRM
-  PRM --> GRA
-
-  classDef client fill:#f3f9ff,stroke:#4a90e2,color:#0b3b6f;
-  classDef gw fill:#fff7ed,stroke:#f59e0b,color:#7a4a00;
-  classDef svc fill:#f0fdf4,stroke:#22c55e,color:#064e3b;
-  classDef rust fill:#fdf2f8,stroke:#ec4899,color:#6b003a;
-  classDef db fill:#eef2ff,stroke:#6366f1,color:#1e1b4b;
-  classDef queue fill:#eff6ff,stroke:#3b82f6,color:#0b3b6f;
-  classDef obs fill:#f1f5f9,stroke:#94a3b8,color:#0f172a;
-```
+%% Go Services
+subgraph GO[Go Services]
+  W[Wallet Svc]:::svc
+  FX[FX Svc]:::svc
+  R[Risk Svc]()
 
 
 ## 🔄 Sequence Diagram: MakePayment Flow
