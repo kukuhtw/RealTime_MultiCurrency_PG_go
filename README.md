@@ -183,9 +183,6 @@ Semua port yang dipublish saat menjalankan stack via `docker-compose`:
 
 > Catatan: Gunakan mapping ini untuk mengakses service secara langsung (misalnya dengan `grpcurl`, `psql`, atau browser).
 
----
-
-Mau saya buatkan juga contoh **command akses cepat**? (misal: `grpcurl -plaintext localhost:19093 list`, atau `psql -h localhost -p 15432 -U postgres poc`) supaya langsung bisa dicoba?
 
 
 ---
