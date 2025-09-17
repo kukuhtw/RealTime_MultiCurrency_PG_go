@@ -152,9 +152,41 @@ make down-grpc
 
 ### Akses
 
-* API Gateway → `http://localhost:8080`
-* Prometheus → `http://localhost:9090`
-* Grafana → `http://localhost:3000`
+Oke, kita tambahkan daftar **published ports** ke README agar jelas mapping service ↔ port. Saya sisipkan di bagian **Setup → Akses**, setelah penjelasan API Gateway, Prometheus, dan Grafana.
+
+Berikut versi revisi:
+
+---
+
+## 🔌 Published Ports (Docker Compose)
+
+Semua port yang dipublish saat menjalankan stack via `docker-compose`:
+
+| Service           | Port(s)   | Keterangan          |
+| ----------------- | --------- | ------------------- |
+| Postgres          | **15432** | Database utama      |
+| Kafka             | **9092**  | Message broker      |
+| Kafka UI          | **9081**  | Web UI Kafka        |
+| Kafka Exporter    | **9308**  | Metrics Kafka       |
+| API Gateway       | **18080** | HTTP/REST + gRPC    |
+| Wallet gRPC       | **19093** | gRPC service        |
+| Wallet Metrics    | **19103** | Prometheus /metrics |
+| FX gRPC           | **19102** | gRPC service        |
+| Risk gRPC         | **19094** | gRPC service        |
+| Risk Metrics      | **19104** | Prometheus /metrics |
+| DB Service (Rust) | **19095** | gRPC service        |
+| DB Metrics        | **19105** | Prometheus /metrics |
+| Payments-RS       | **19096** | gRPC service        |
+| Payments Metrics  | **19106** | Prometheus /metrics |
+| Prometheus        | **19097** | Monitoring          |
+| Grafana           | **3000**  | Dashboard           |
+
+> Catatan: Gunakan mapping ini untuk mengakses service secara langsung (misalnya dengan `grpcurl`, `psql`, atau browser).
+
+---
+
+Mau saya buatkan juga contoh **command akses cepat**? (misal: `grpcurl -plaintext localhost:19093 list`, atau `psql -h localhost -p 15432 -U postgres poc`) supaya langsung bisa dicoba?
+
 
 ---
 
