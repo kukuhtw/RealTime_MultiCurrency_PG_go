@@ -108,7 +108,6 @@ flowchart LR
   classDef obs fill:#f1f5f9,stroke:#94a3b8,color:#0f172a;
 ```
 
----
 
 ## 🔄 Sequence Diagram: MakePayment Flow
 
